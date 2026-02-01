@@ -13,7 +13,7 @@ import click
 
 from ezagent.agent import Agent, AgentResult
 from ezagent.config import ProjectConfig, load_config
-from ezagent.llm.anthropic import AnthropicProvider
+from ezagent.llm import create_provider
 
 
 class AgentDaemon:
@@ -26,10 +26,20 @@ class AgentDaemon:
 
     async def initialize(self):
         """Create and initialize all agents."""
-        provider = AnthropicProvider()
         agent_names = list(self.config.agents.keys())
+        # Cache providers by (provider_name, model) to avoid duplicate clients
+        provider_cache: Dict[tuple, Any] = {}
 
         for name, agent_config in self.config.agents.items():
+            # Resolve provider and model: per-agent overrides project defaults
+            provider_name = agent_config.provider or self.config.provider
+            model = agent_config.model or self.config.model
+
+            cache_key = (provider_name, model)
+            if cache_key not in provider_cache:
+                provider_cache[cache_key] = create_provider(provider_name, model)
+            provider = provider_cache[cache_key]
+
             agent = Agent(
                 name=name,
                 config=agent_config,

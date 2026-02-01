@@ -1,6 +1,6 @@
 # ezagent
 
-Low-code CLI SDK for creating AI agents using Anthropic API and FastMCP tools.
+Low-code CLI SDK for creating AI agents using LLMs (Anthropic, Google Gemini) and FastMCP tools.
 
 Define agents, tools, and skills in a simple YAML config — then interact with them from any terminal.
 
@@ -98,11 +98,21 @@ You are an expert researcher. When given a topic:
 3. Synthesize findings into a clear answer
 ```
 
-### 5. Run
+### 5. Set API keys
+
+Set the key for the provider(s) you plan to use:
 
 ```bash
+# Anthropic (default provider)
 export ANTHROPIC_API_KEY=sk-...
 
+# Google Gemini
+export GOOGLE_API_KEY=your-key-here
+```
+
+### 6. Run
+
+```bash
 # Start the daemon
 ez start
 
@@ -123,13 +133,55 @@ ez stop
 | `ez run <agent> <message>`   | Send a message to an agent              |
 | `ez <agent> <message>`       | Shorthand for `ez run`                  |
 
+## Providers
+
+ezagent supports multiple LLM providers. Set the provider globally or per-agent in `agents.yml`.
+
+| Provider    | Name in config | Default model              | Env variable        |
+| ----------- | -------------- | -------------------------- | ------------------- |
+| Anthropic   | `anthropic`    | `claude-sonnet-4-20250514` | `ANTHROPIC_API_KEY` |
+| Google Gemini | `google`     | `gemini-2.0-flash`         | `GOOGLE_API_KEY`    |
+
+### Global provider
+
+Set a top-level `provider` and `model` in `agents.yml`. All agents inherit these unless they override them. If omitted, defaults to `anthropic`.
+
+```yaml
+provider: google
+model: gemini-2.0-flash
+
+agents:
+  assistant:
+    description: "Uses Gemini"
+```
+
+### Per-agent override
+
+Individual agents can use a different provider/model than the global default:
+
+```yaml
+provider: google
+model: gemini-2.0-flash
+
+agents:
+  researcher:
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+    description: "This agent uses Claude"
+  assistant:
+    description: "This agent inherits Google Gemini from the global config"
+```
+
 ## Architecture
 
 - **Daemon**: Background process communicating over a Unix domain socket (`/tmp/ezagent_<hash>.sock`)
 - **Agents**: Each agent has a system prompt (built from skills), access to MCP tools, and can delegate to other agents
 - **Tools**: FastMCP servers connected via STDIO transport
 - **Agent-as-tool**: Agents listed in another agent's `tools` become callable tools with a `{"message": string}` interface
-- **LLM**: Provider-agnostic design with an `LLMProvider` ABC; currently implements Anthropic
+- **LLM**: Provider-agnostic design with an `LLMProvider` ABC; implements Anthropic and Google Gemini
+
+## TODO
+* Test Gemini Provider, it's not tested due to missing API key.
 
 ## License
 
