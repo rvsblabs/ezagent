@@ -86,6 +86,19 @@ if __name__ == "__main__":
     mcp.run()
 ```
 
+### Tool dependencies
+
+If your tool needs external libraries, add a `requirements.txt` in the tool directory:
+
+```text
+tools/
+  my_tool/
+    main.py
+    requirements.txt    # e.g. "requests>=2.28"
+```
+
+Or a full `pyproject.toml` for more control. ezagent uses `uv` to run the tool in an isolated environment automatically.
+
 ### 4. Add skills
 
 Skills are markdown files in `skills/` that get injected into the agent's system prompt:
