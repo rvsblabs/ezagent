@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastmcp import Client
-from fastmcp.client.transports import PythonStdioTransport
+from fastmcp.client.transports import PythonStdioTransport, UvStdioTransport
 
 
 class ToolManager:
@@ -25,11 +25,26 @@ class ToolManager:
         tools_dir = self._project_dir / "tools"
 
         for tool_name in self._tool_names:
-            main_py = tools_dir / tool_name / "main.py"
+            tool_dir = tools_dir / tool_name
+            main_py = tool_dir / "main.py"
             if not main_py.is_file():
                 raise FileNotFoundError(f"Tool main.py not found: {main_py}")
 
-            transport = PythonStdioTransport(script_path=str(main_py))
+            pyproject = tool_dir / "pyproject.toml"
+            requirements = tool_dir / "requirements.txt"
+
+            if pyproject.is_file():
+                transport = UvStdioTransport(
+                    command=str(main_py),
+                    project_directory=tool_dir,
+                )
+            elif requirements.is_file():
+                transport = UvStdioTransport(
+                    command=str(main_py),
+                    with_requirements=requirements,
+                )
+            else:
+                transport = PythonStdioTransport(script_path=str(main_py))
             client = Client(transport)
             await client.__aenter__()
             self._clients[tool_name] = client

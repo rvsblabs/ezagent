@@ -104,6 +104,18 @@ if __name__ == "__main__":
     mcp.run()
 ```
 
+### Add tool dependencies
+
+If your tool needs external packages, add a `requirements.txt` alongside `main.py`:
+
+```text
+tools/my_tool/
+  main.py
+  requirements.txt    # one requirement per line, e.g. "requests>=2.28"
+```
+
+Or use a `pyproject.toml` for full project-style dependency management. When either file is present, ezagent automatically uses `uv` to run the tool with those dependencies available.
+
 ### Add a skill
 
 Create `skills/<skill_name>.md` with instructions for the agent:
