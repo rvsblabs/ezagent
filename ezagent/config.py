@@ -12,6 +12,8 @@ class AgentConfig(BaseModel):
     tools: List[str] = []
     skills: List[str] = []
     description: str = ""
+    provider: str = ""
+    model: str = ""
 
     @field_validator("tools", "skills", mode="before")
     @classmethod
@@ -26,6 +28,8 @@ class AgentConfig(BaseModel):
 class ProjectConfig(BaseModel):
     agents: Dict[str, AgentConfig]
     project_dir: Path
+    provider: str = "anthropic"
+    model: str = ""
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -121,4 +125,9 @@ def load_config(project_dir: Optional[Path] = None) -> ProjectConfig:
     if not raw or "agents" not in raw:
         raise ValueError("agents.yml must contain an 'agents' key.")
 
-    return ProjectConfig(agents=raw["agents"], project_dir=project_dir)
+    return ProjectConfig(
+        agents=raw["agents"],
+        project_dir=project_dir,
+        provider=raw.get("provider", "anthropic"),
+        model=raw.get("model", ""),
+    )

@@ -136,6 +136,7 @@ class Agent:
                     {
                         "type": "tool_result",
                         "tool_use_id": tc.id,
+                        "name": tc.name,
                         "content": result_text,
                     }
                 )
