@@ -130,6 +130,7 @@ ez stop
 | `ez init <name>`             | Scaffold a new project                  |
 | `ez start`                   | Start the agent daemon (background)     |
 | `ez stop`                    | Stop the daemon                         |
+| `ez status`                  | Show daemon status and configured agents|
 | `ez run <agent> <message>`   | Send a message to an agent              |
 | `ez <agent> <message>`       | Shorthand for `ez run`                  |
 

@@ -81,6 +81,38 @@ def stop():
 
 
 @cli.command()
+def status():
+    """Show daemon status and configured agents."""
+    from ezagent.daemon import get_status
+
+    info = get_status()
+
+    if info["running"]:
+        click.echo(f"Daemon: running (PID {info['pid']})")
+        click.echo(f"Socket: {info['socket']}")
+    else:
+        click.echo("Daemon: not running")
+
+    click.echo(f"Project: {info['project_dir']}")
+
+    agents = info.get("agents", {})
+    if not agents:
+        click.echo("\nNo agents configured.")
+    else:
+        if info["running"]:
+            click.echo("\nAgents:")
+        else:
+            click.echo("\nConfigured agents (from agents.yml):")
+        for name, details in agents.items():
+            provider = details.get("provider", "")
+            model = details.get("model", "")
+            provider_model = f"{provider}/{model}" if model else provider
+            tools = ", ".join(details.get("tools", [])) or "\u2014"
+            skills = ", ".join(details.get("skills", [])) or "\u2014"
+            click.echo(f"  {name:<16} {provider_model:<32} tools: {tools:<24} skills: {skills}")
+
+
+@cli.command()
 @click.argument("agent_name")
 @click.argument("message", nargs=-1, required=True)
 @click.pass_context

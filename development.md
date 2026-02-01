@@ -59,11 +59,7 @@ uv run ez start
 Verify it's running:
 
 ```bash
-# Check PID file exists
-ls /tmp/ezagent_*.pid
-
-# Check socket file exists
-ls /tmp/ezagent_*.sock
+uv run ez status
 ```
 
 ### Step 3 — Send a message
@@ -187,11 +183,7 @@ uv run ez --debug run assistant "Hi"
 ### Check if daemon is running
 
 ```bash
-# Find PID
-cat /tmp/ezagent_*.pid
-
-# Check process
-ps aux | grep ezagent
+uv run ez status
 ```
 
 ### Daemon won't start
@@ -232,7 +224,7 @@ This requires adding a `__main__.py`. Alternatively, `uv sync` already installs 
 ```text
 ezagent/
   __init__.py          # Package version
-  cli.py               # Click CLI entry point (init, start, stop, run)
+  cli.py               # Click CLI entry point (init, start, stop, status, run)
   config.py            # Pydantic models, YAML loading, validation
   scaffold.py          # ez init scaffolding
   agent.py             # Agent class with agentic tool-use loop
