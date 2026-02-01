@@ -7,7 +7,7 @@ import signal
 import socket
 import sys
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict
 
 import click
 
@@ -104,6 +104,28 @@ class AgentDaemon:
                 return
 
             request = json.loads(data.decode())
+
+            # Handle status requests
+            if request.get("type") == "status":
+                agents_info = {}
+                for name, agent in self.agents.items():
+                    ac = self.config.agents[name]
+                    provider_name = ac.provider or self.config.provider
+                    model = ac.model or self.config.model
+                    agents_info[name] = {
+                        "description": ac.description,
+                        "provider": provider_name,
+                        "model": model,
+                        "tools": ac.tools,
+                        "skills": ac.skills,
+                    }
+                response = {"type": "status", "agents": agents_info}
+                writer.write((json.dumps(response) + "\n").encode())
+                await writer.drain()
+                writer.close()
+                await writer.wait_closed()
+                return
+
             agent_name = request.get("agent", "")
             message = request.get("message", "")
             debug = request.get("debug", False)
@@ -233,6 +255,89 @@ def stop_daemon():
             os.unlink(path)
 
     click.echo("Daemon stopped.")
+
+
+def get_status() -> dict:
+    """Check daemon status and return agent information."""
+    try:
+        config = load_config()
+    except (FileNotFoundError, ValueError) as e:
+        raise click.ClickException(str(e))
+
+    result: Dict[str, Any] = {
+        "running": False,
+        "pid": None,
+        "socket": config.socket_path,
+        "project_dir": str(config.project_dir),
+        "agents": {},
+    }
+
+    # Build agent info from config (used when daemon isn't running)
+    config_agents = {}
+    for name, ac in config.agents.items():
+        provider_name = ac.provider or config.provider
+        model = ac.model or config.model
+        config_agents[name] = {
+            "description": ac.description,
+            "provider": provider_name,
+            "model": model,
+            "tools": ac.tools,
+            "skills": ac.skills,
+        }
+
+    pid_path = config.pid_path
+    if not os.path.exists(pid_path):
+        result["agents"] = config_agents
+        return result
+
+    with open(pid_path) as f:
+        try:
+            pid = int(f.read().strip())
+        except ValueError:
+            result["agents"] = config_agents
+            return result
+
+    # Check if process is alive
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, PermissionError):
+        result["agents"] = config_agents
+        return result
+
+    result["running"] = True
+    result["pid"] = pid
+
+    # Query live agent info from daemon via socket
+    sock_path = config.socket_path
+    if os.path.exists(sock_path):
+        try:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            sock.connect(sock_path)
+            sock.sendall(json.dumps({"type": "status"}).encode())
+            sock.shutdown(socket.SHUT_WR)
+
+            buffer = b""
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                buffer += chunk
+            sock.close()
+
+            for line in buffer.decode().strip().split("\n"):
+                if not line:
+                    continue
+                resp = json.loads(line)
+                if resp.get("type") == "status":
+                    result["agents"] = resp.get("agents", {})
+                    return result
+        except (ConnectionRefusedError, OSError, json.JSONDecodeError):
+            pass
+
+    # Fallback to config agents if socket query failed
+    result["agents"] = config_agents
+    return result
 
 
 def send_message(agent_name: str, message: str, debug: bool = False):
