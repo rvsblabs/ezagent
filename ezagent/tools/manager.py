@@ -11,14 +11,54 @@ from fastmcp.client.transports import PythonStdioTransport, UvStdioTransport
 class ToolManager:
     """Manages FastMCP tool clients and agent-as-tool synthetic tools."""
 
-    def __init__(self, project_dir: Path, tool_names: List[str], agent_names: List[str]):
+    def __init__(
+        self,
+        project_dir: Path,
+        tool_names: List[str],
+        agent_names: List[str],
+        external_tool_paths: Optional[Dict[str, Path]] = None,
+    ):
         self._project_dir = project_dir
         self._tool_names = [t for t in tool_names if t not in agent_names]
         self._agent_tool_names = [t for t in tool_names if t in agent_names]
+        self._external_tool_paths = external_tool_paths or {}
         self._clients: Dict[str, Client] = {}
         self._tool_schemas: Dict[str, Dict[str, Any]] = {}
         # Maps tool function name -> (client_key, original_name)
         self._tool_routing: Dict[str, tuple[str, str]] = {}
+
+    async def _connect_tool_dir(self, tool_name: str, tool_dir: Path):
+        """Connect to a single MCP tool server in the given directory."""
+        main_py = tool_dir / "main.py"
+        if not main_py.is_file():
+            raise FileNotFoundError(f"Tool main.py not found: {main_py}")
+
+        pyproject = tool_dir / "pyproject.toml"
+        requirements = tool_dir / "requirements.txt"
+
+        if pyproject.is_file():
+            transport = UvStdioTransport(
+                command=str(main_py),
+                project_directory=tool_dir,
+            )
+        elif requirements.is_file():
+            transport = UvStdioTransport(
+                command=str(main_py),
+                with_requirements=requirements,
+            )
+        else:
+            transport = PythonStdioTransport(script_path=str(main_py))
+        client = Client(transport)
+        await client.__aenter__()
+        self._clients[tool_name] = client
+
+        # List tools from this MCP server
+        tools = await client.list_tools()
+        for tool in tools:
+            schema = self._mcp_to_anthropic_schema(tool_name, tool)
+            qualified_name = schema["name"]
+            self._tool_schemas[qualified_name] = schema
+            self._tool_routing[qualified_name] = (tool_name, tool.name)
 
     async def connect(self):
         """Connect to all MCP tool servers and collect schemas."""
@@ -26,36 +66,11 @@ class ToolManager:
 
         for tool_name in self._tool_names:
             tool_dir = tools_dir / tool_name
-            main_py = tool_dir / "main.py"
-            if not main_py.is_file():
-                raise FileNotFoundError(f"Tool main.py not found: {main_py}")
+            await self._connect_tool_dir(tool_name, tool_dir)
 
-            pyproject = tool_dir / "pyproject.toml"
-            requirements = tool_dir / "requirements.txt"
-
-            if pyproject.is_file():
-                transport = UvStdioTransport(
-                    command=str(main_py),
-                    project_directory=tool_dir,
-                )
-            elif requirements.is_file():
-                transport = UvStdioTransport(
-                    command=str(main_py),
-                    with_requirements=requirements,
-                )
-            else:
-                transport = PythonStdioTransport(script_path=str(main_py))
-            client = Client(transport)
-            await client.__aenter__()
-            self._clients[tool_name] = client
-
-            # List tools from this MCP server
-            tools = await client.list_tools()
-            for tool in tools:
-                schema = self._mcp_to_anthropic_schema(tool_name, tool)
-                qualified_name = schema["name"]
-                self._tool_schemas[qualified_name] = schema
-                self._tool_routing[qualified_name] = (tool_name, tool.name)
+        # Connect external (git-cloned) tools
+        for tool_name, tool_dir in self._external_tool_paths.items():
+            await self._connect_tool_dir(tool_name, tool_dir)
 
         # Register synthetic agent-as-tool schemas
         for agent_name in self._agent_tool_names:
