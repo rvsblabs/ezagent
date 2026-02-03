@@ -221,6 +221,47 @@ cat .ezagent/scheduler.log  # should show "Scheduler loop cancelled"
 
 Agents without a `schedule` key are unaffected — they work exactly as before.
 
+## Testing the Web Search Tool
+
+Add `web_search` to an agent's tools in `agents.yml`:
+
+```yaml
+agents:
+  researcher:
+    tools: web_search
+    description: "An agent that can search the web"
+```
+
+Set the Brave Search API key and test:
+
+```bash
+export BRAVE_SEARCH_API_KEY=your-key-here
+
+uv run ez start
+
+# Search the web
+uv run ez researcher "Search for the latest Python 3.13 features"
+
+# The agent can also read full page content from search results
+uv run ez researcher "Find and read the Python 3.13 release notes"
+
+uv run ez stop
+```
+
+Get a free API key at [brave.com/search/api](https://brave.com/search/api/).
+
+### Missing API key
+
+If `BRAVE_SEARCH_API_KEY` is not set, the tool returns an error message explaining how to get a key.
+
+### Verify registration
+
+```bash
+uv run python -c "from ezagent.tools.builtins import PREBUILT_TOOLS; print(PREBUILT_TOOLS)"
+```
+
+You should see `web_search` in the output dictionary.
+
 ## Testing Agent-as-Tool Delegation
 
 Update `agents.yml` to have two agents where one delegates to the other:
@@ -338,4 +379,8 @@ ezagent/
         __init__.py    # Package marker
         main.py        # FastMCP server: store, search, delete, list
         requirements.txt  # pymilvus, sentence-transformers
+      web_search/
+        __init__.py    # Package marker
+        main.py        # FastMCP server: web_search, web_search_read
+        requirements.txt  # requests
 ```

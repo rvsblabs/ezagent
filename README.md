@@ -103,9 +103,10 @@ Or a full `pyproject.toml` for more control. ezagent uses `uv` to run the tool i
 
 ezagent ships with prebuilt tools that don't require any local files. Add them to your `agents.yml` tools list by name:
 
-| Tool     | Description                                                                 |
-| -------- | --------------------------------------------------------------------------- |
-| `memory` | Persistent vector-based memory (store, search, delete, list) using Milvus Lite and sentence-transformers |
+| Tool         | Description                                                                 |
+| ------------ | --------------------------------------------------------------------------- |
+| `memory`     | Persistent vector-based memory (store, search, delete, list) using Milvus Lite and sentence-transformers |
+| `web_search` | Web search and page reading via Brave Search API (requires `BRAVE_SEARCH_API_KEY`) |
 
 ```yaml
 agents:
@@ -135,6 +136,30 @@ facts          — factual knowledge
 ```
 
 Memories are stored locally in `.ezagent/memory/milvus.db` inside the project directory. Embeddings are generated locally using the `all-MiniLM-L6-v2` model (downloaded on first use, ~90MB).
+
+#### Web search tool
+
+The `web_search` tool gives agents two operations:
+
+- **`web_search(query, count?)`** — Search the web and return results with title, URL, and snippet (default 5 results, max 20).
+- **`web_search_read(url)`** — Fetch a URL's text content with HTML stripped, truncated to ~20,000 characters.
+
+Requires a Brave Search API key:
+
+```bash
+export BRAVE_SEARCH_API_KEY=your-key-here
+```
+
+Get a free API key at [brave.com/search/api](https://brave.com/search/api/).
+
+You can select a different search provider via the `WEB_SEARCH_PROVIDER` env var (default: `"brave"`). Currently only Brave is supported.
+
+```yaml
+agents:
+  researcher:
+    tools: web_search
+    description: "An agent that can search the web"
+```
 
 ### 4. Add skills
 
