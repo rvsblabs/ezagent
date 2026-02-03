@@ -34,6 +34,8 @@ class Agent:
         agent_runner: Optional[
             Callable[[str, str, int, bool], Coroutine[Any, Any, "AgentResult"]]
         ] = None,
+        external_tool_paths: Optional[Dict[str, Path]] = None,
+        external_skill_paths: Optional[Dict[str, Path]] = None,
     ):
         self.name = name
         self.config = config
@@ -41,6 +43,8 @@ class Agent:
         self.provider = provider
         self.agent_names = agent_names
         self._agent_runner = agent_runner
+        self._external_tool_paths = external_tool_paths or {}
+        self._external_skill_paths = external_skill_paths or {}
         self._tool_manager: Optional[ToolManager] = None
         self._system_prompt: str = ""
 
@@ -53,16 +57,23 @@ class Agent:
 
         skills_dir = self.project_dir / "skills"
         for skill in self.config.skills:
-            skill_path = skills_dir / f"{skill}.md"
+            # Check external skill paths first
+            if skill in self._external_skill_paths:
+                skill_path = self._external_skill_paths[skill] / "skill.md"
+            else:
+                skill_path = skills_dir / f"{skill}.md"
             if skill_path.is_file():
                 content = skill_path.read_text().strip()
                 parts.append(f"## Skill: {skill}\n{content}")
 
         self._system_prompt = "\n\n".join(parts)
 
-        # Connect tool manager
+        # Connect tool manager (pass only local tool names, externals handled separately)
         self._tool_manager = ToolManager(
-            self.project_dir, self.config.tools, self.agent_names
+            self.project_dir,
+            self.config.tools,
+            self.agent_names,
+            external_tool_paths=self._external_tool_paths,
         )
         await self._tool_manager.connect()
 

@@ -7,6 +7,8 @@ from typing import Dict, List, Optional
 import yaml
 from pydantic import BaseModel, field_validator, model_validator
 
+from ezagent.external import is_git_ref
+
 
 class AgentConfig(BaseModel):
     tools: List[str] = []
@@ -40,16 +42,20 @@ class ProjectConfig(BaseModel):
         skills_dir = self.project_dir / "skills"
 
         for name, agent in self.agents.items():
-            # Validate skills exist as .md files
+            # Validate skills exist as .md files (skip git refs)
             for skill in agent.skills:
+                if is_git_ref(skill):
+                    continue
                 skill_path = skills_dir / f"{skill}.md"
                 if not skill_path.is_file():
                     raise ValueError(
                         f"Agent '{name}': skill file not found: {skill_path}"
                     )
 
-            # Validate tools: each must be either a tool dir or another agent name
+            # Validate tools: each must be either a tool dir or another agent name (skip git refs)
             for tool in agent.tools:
+                if is_git_ref(tool):
+                    continue
                 if tool in agent_names:
                     continue
                 tool_main = tools_dir / tool / "main.py"
@@ -68,6 +74,8 @@ class ProjectConfig(BaseModel):
             visited.add(agent_name)
             stack.add(agent_name)
             for tool in self.agents[agent_name].tools:
+                if is_git_ref(tool):
+                    continue
                 if tool in agent_names:
                     if tool in stack:
                         return True

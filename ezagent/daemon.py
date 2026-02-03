@@ -13,6 +13,7 @@ import click
 
 from ezagent.agent import Agent, AgentResult
 from ezagent.config import ProjectConfig, load_config
+from ezagent.external import resolve_externals
 from ezagent.llm import create_provider
 
 
@@ -31,6 +32,19 @@ class AgentDaemon:
         provider_cache: Dict[tuple, Any] = {}
 
         for name, agent_config in self.config.agents.items():
+            # Resolve external git-based tools and skills
+            ext_tool_paths, ext_skill_paths, local_tools, local_skills = (
+                resolve_externals(
+                    self.config.project_dir,
+                    agent_config.tools,
+                    agent_config.skills,
+                )
+            )
+
+            # Replace agent config lists with local-only names (git refs stripped)
+            agent_config.tools = local_tools
+            agent_config.skills = local_skills
+
             # Resolve provider and model: per-agent overrides project defaults
             provider_name = agent_config.provider or self.config.provider
             model = agent_config.model or self.config.model
@@ -47,6 +61,8 @@ class AgentDaemon:
                 provider=provider,
                 agent_names=agent_names,
                 agent_runner=self._delegate_to_agent,
+                external_tool_paths=ext_tool_paths,
+                external_skill_paths=ext_skill_paths,
             )
             await agent.initialize()
             self.agents[name] = agent

@@ -43,6 +43,61 @@ Keep your responses concise and helpful.
 """
 
 
+TOOL_TEMPLATE = """\
+from fastmcp import FastMCP
+
+mcp = FastMCP("{name}")
+
+
+@mcp.tool()
+def hello(text: str) -> str:
+    \"\"\"A sample tool function.\"\"\"
+    return f"[{name}] Received: {{text}}"
+
+
+if __name__ == "__main__":
+    mcp.run()
+"""
+
+TOOL_REQUIREMENTS = """\
+# Add Python dependencies for this tool here, one per line.
+"""
+
+SKILL_TEMPLATE = """\
+# {name}
+Describe what this skill does and how the agent should behave.
+"""
+
+
+def create_tool(name: str, base_dir: Path) -> Path:
+    """Scaffold a new tool directory with main.py and requirements.txt.
+
+    Creates <base_dir>/<name>/main.py and <base_dir>/<name>/requirements.txt.
+    """
+    tool_dir = base_dir / name
+    if tool_dir.exists():
+        raise FileExistsError(f"Tool directory already exists: {tool_dir}")
+
+    tool_dir.mkdir(parents=True)
+    (tool_dir / "main.py").write_text(TOOL_TEMPLATE.format(name=name))
+    (tool_dir / "requirements.txt").write_text(TOOL_REQUIREMENTS)
+    return tool_dir
+
+
+def create_skill(name: str, base_dir: Path) -> Path:
+    """Scaffold a new skill markdown file.
+
+    Creates <base_dir>/<name>.md.
+    """
+    base_dir.mkdir(parents=True, exist_ok=True)
+    skill_path = base_dir / f"{name}.md"
+    if skill_path.exists():
+        raise FileExistsError(f"Skill file already exists: {skill_path}")
+
+    skill_path.write_text(SKILL_TEMPLATE.format(name=name))
+    return skill_path
+
+
 def create_project(app_name: str) -> Path:
     """Scaffold a new ezagent project directory."""
     base = Path.cwd() / app_name

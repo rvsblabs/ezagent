@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
 
-from ezagent.scaffold import create_project
+from ezagent.config import find_project_dir
+from ezagent.scaffold import create_project, create_skill, create_tool
 
 
 class EzGroup(click.Group):
@@ -60,6 +63,49 @@ def init(app_name: str):
         click.echo(f"  {app_name}/tools/     — add FastMCP tool servers here")
         click.echo(f"  {app_name}/skills/    — add skill .md files here")
         click.echo(f"  {app_name}/agents.yml — configure your agents")
+    except FileExistsError as e:
+        raise click.ClickException(str(e))
+
+
+@cli.group()
+def create():
+    """Scaffold new tools or skills."""
+
+
+@create.command("tool")
+@click.argument("name")
+def create_tool_cmd(name: str):
+    """Create a new tool scaffold: <name>/main.py + requirements.txt"""
+    project_dir = find_project_dir()
+    if project_dir is not None:
+        base_dir = project_dir / "tools"
+    else:
+        base_dir = Path.cwd()
+    try:
+        path = create_tool(name, base_dir)
+        click.echo(f"Created tool at {path}")
+        click.echo(f"  {path}/main.py         — implement your FastMCP tool here")
+        click.echo(f"  {path}/requirements.txt — add dependencies if needed")
+        if project_dir is not None:
+            click.echo(f"\nNext: add '{name}' to an agent's tools list in agents.yml")
+    except FileExistsError as e:
+        raise click.ClickException(str(e))
+
+
+@create.command("skill")
+@click.argument("name")
+def create_skill_cmd(name: str):
+    """Create a new skill scaffold: <name>.md"""
+    project_dir = find_project_dir()
+    if project_dir is not None:
+        base_dir = project_dir / "skills"
+    else:
+        base_dir = Path.cwd()
+    try:
+        path = create_skill(name, base_dir)
+        click.echo(f"Created skill at {path}")
+        if project_dir is not None:
+            click.echo(f"\nNext: add '{name}' to an agent's skills list in agents.yml")
     except FileExistsError as e:
         raise click.ClickException(str(e))
 
