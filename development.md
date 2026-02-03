@@ -262,6 +262,42 @@ uv run python -c "from ezagent.tools.builtins import PREBUILT_TOOLS; print(PREBU
 
 You should see `web_search` in the output dictionary.
 
+## Testing the HTTP Tool
+
+Add `http` to an agent's tools in `agents.yml`:
+
+```yaml
+agents:
+  assistant:
+    tools: http
+    description: "An agent that can make HTTP requests"
+```
+
+Then test with public APIs (no auth needed):
+
+```bash
+uv run ez start
+
+# Make a GET request
+uv run ez assistant "Make a GET request to https://httpbin.org/get and tell me my IP"
+
+# POST JSON data
+uv run ez assistant "POST {'name': 'test'} to https://httpbin.org/post and show the response"
+
+# Read a web page
+uv run ez assistant "Read the content of https://example.com"
+
+uv run ez stop
+```
+
+### Verify registration
+
+```bash
+uv run python -c "from ezagent.tools.builtins import PREBUILT_TOOLS; print(PREBUILT_TOOLS)"
+```
+
+You should see `http` in the output dictionary.
+
 ## Testing Agent-as-Tool Delegation
 
 Update `agents.yml` to have two agents where one delegates to the other:
@@ -382,5 +418,9 @@ ezagent/
       web_search/
         __init__.py    # Package marker
         main.py        # FastMCP server: web_search, web_search_read
+        requirements.txt  # requests
+      http/
+        __init__.py    # Package marker
+        main.py        # FastMCP server: http_request, http_read
         requirements.txt  # requests
 ```
