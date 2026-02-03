@@ -107,6 +107,7 @@ ezagent ships with prebuilt tools that don't require any local files. Add them t
 | ------------ | --------------------------------------------------------------------------- |
 | `memory`     | Persistent vector-based memory (store, search, delete, list) using Milvus Lite and sentence-transformers |
 | `web_search` | Web search and page reading via Brave Search API (requires `BRAVE_SEARCH_API_KEY`) |
+| `http`       | Generic HTTP client for interacting with any REST API (no API key required by the tool) |
 
 ```yaml
 agents:
@@ -159,6 +160,22 @@ agents:
   researcher:
     tools: web_search
     description: "An agent that can search the web"
+```
+
+#### HTTP tool
+
+The `http` tool gives agents two operations:
+
+- **`http_request(method, url, headers?, body?, params?)`** — Make an HTTP request (GET, POST, PUT, PATCH, DELETE, HEAD). Returns status code, response headers, and body. Auto-detects JSON responses. Timeout: 30 seconds.
+- **`http_read(url, headers?)`** — Shorthand GET that strips HTML tags and returns plain text, truncated to ~20,000 characters.
+
+No API key is required by the tool itself — authentication is handled via headers the agent passes (guided by skills).
+
+```yaml
+agents:
+  api_client:
+    tools: http
+    description: "An agent that can interact with REST APIs"
 ```
 
 ### 4. Add skills
