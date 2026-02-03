@@ -298,6 +298,48 @@ uv run python -c "from ezagent.tools.builtins import PREBUILT_TOOLS; print(PREBU
 
 You should see `http` in the output dictionary.
 
+## Testing the Filesystem Tool
+
+Add `filesystem` to an agent's tools in `agents.yml`:
+
+```yaml
+agents:
+  assistant:
+    tools: filesystem
+    skills: friendly
+    description: "A friendly assistant that can read and write files"
+```
+
+Then test the four operations:
+
+```bash
+uv run ez start
+
+# Create a directory
+uv run ez assistant "Create a directory called test_output"
+
+# Write a file
+uv run ez assistant "Write 'hello world' to test_output/hello.txt"
+
+# Read a file
+uv run ez assistant "Read the file test_output/hello.txt"
+
+# List directory contents
+uv run ez assistant "List the contents of the test_output directory"
+
+uv run ez stop
+```
+
+No API keys or external dependencies are needed — the filesystem tool uses Python stdlib only.
+
+### Verify registration
+
+```bash
+uv run python -c "from ezagent.tools.builtins import PREBUILT_TOOLS; print(PREBUILT_TOOLS)"
+```
+
+You should see `filesystem` in the output dictionary.
+
 ## Testing Agent-as-Tool Delegation
 
 Update `agents.yml` to have two agents where one delegates to the other:
@@ -423,4 +465,7 @@ ezagent/
         __init__.py    # Package marker
         main.py        # FastMCP server: http_request, http_read
         requirements.txt  # requests
+      filesystem/
+        __init__.py    # Package marker
+        main.py        # FastMCP server: read_file, write_file, list_directory, create_directory
 ```
