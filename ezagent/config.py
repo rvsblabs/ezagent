@@ -8,6 +8,7 @@ import yaml
 from pydantic import BaseModel, field_validator, model_validator
 
 from ezagent.external import is_git_ref
+from ezagent.tools.builtins import PREBUILT_TOOLS
 
 
 class AgentConfig(BaseModel):
@@ -52,9 +53,11 @@ class ProjectConfig(BaseModel):
                         f"Agent '{name}': skill file not found: {skill_path}"
                     )
 
-            # Validate tools: each must be either a tool dir or another agent name (skip git refs)
+            # Validate tools: each must be either a tool dir or another agent name (skip git refs and prebuilts)
             for tool in agent.tools:
                 if is_git_ref(tool):
+                    continue
+                if tool in PREBUILT_TOOLS:
                     continue
                 if tool in agent_names:
                     continue
