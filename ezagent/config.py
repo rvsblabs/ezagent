@@ -7,8 +7,22 @@ from typing import Dict, List, Optional
 import yaml
 from pydantic import BaseModel, field_validator, model_validator
 
+from croniter import croniter
+
 from ezagent.external import is_git_ref
 from ezagent.tools.builtins import PREBUILT_TOOLS
+
+
+class ScheduleEntry(BaseModel):
+    cron: str
+    message: str
+
+    @field_validator("cron")
+    @classmethod
+    def validate_cron(cls, v: str) -> str:
+        if not croniter.is_valid(v):
+            raise ValueError(f"Invalid cron expression: {v!r}")
+        return v
 
 
 class AgentConfig(BaseModel):
@@ -17,6 +31,7 @@ class AgentConfig(BaseModel):
     description: str = ""
     provider: str = ""
     model: str = ""
+    schedule: List[ScheduleEntry] = []
 
     @field_validator("tools", "skills", mode="before")
     @classmethod
