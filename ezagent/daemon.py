@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import signal
 import socket
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
 import click
+from croniter import croniter
 
 from ezagent.agent import Agent, AgentResult
 from ezagent.config import ProjectConfig, load_config
@@ -24,6 +27,8 @@ class AgentDaemon:
         self.config = config
         self.agents: Dict[str, Agent] = {}
         self._server: asyncio.AbstractServer | None = None
+        self._scheduler_task: asyncio.Task | None = None
+        self._schedule_entries: list[dict] = []
 
     async def initialize(self):
         """Create and initialize all agents."""
@@ -67,6 +72,83 @@ class AgentDaemon:
             await agent.initialize()
             self.agents[name] = agent
 
+        self._build_schedule()
+
+    def _build_schedule(self):
+        """Build the list of scheduled entries from agent configs."""
+        now = datetime.now(timezone.utc)
+        for name, agent_config in self.config.agents.items():
+            for entry in agent_config.schedule:
+                cron_iter = croniter(entry.cron, now)
+                next_run = cron_iter.get_next(datetime)
+                self._schedule_entries.append({
+                    "agent_name": name,
+                    "cron_expr": entry.cron,
+                    "message": entry.message,
+                    "cron_iter": cron_iter,
+                    "next_run": next_run,
+                })
+        if self._schedule_entries:
+            logging.info(
+                "Scheduler initialized with %d entries", len(self._schedule_entries)
+            )
+
+    async def _run_scheduler(self):
+        """Background loop that fires scheduled agent runs."""
+        logging.info("Scheduler loop started")
+        try:
+            while True:
+                if not self._schedule_entries:
+                    await asyncio.sleep(60)
+                    continue
+
+                self._schedule_entries.sort(key=lambda e: e["next_run"])
+                earliest = self._schedule_entries[0]["next_run"]
+                now = datetime.now(timezone.utc)
+                delay = (earliest - now).total_seconds()
+                if delay > 0:
+                    await asyncio.sleep(delay)
+
+                now = datetime.now(timezone.utc)
+                for entry in self._schedule_entries:
+                    if entry["next_run"] <= now:
+                        logging.info(
+                            "Firing scheduled run: agent=%s cron=%r",
+                            entry["agent_name"],
+                            entry["cron_expr"],
+                        )
+                        asyncio.create_task(
+                            self._execute_scheduled_run(
+                                entry["agent_name"],
+                                entry["message"],
+                                entry["cron_expr"],
+                            )
+                        )
+                        entry["next_run"] = entry["cron_iter"].get_next(datetime)
+        except asyncio.CancelledError:
+            logging.info("Scheduler loop cancelled")
+
+    async def _execute_scheduled_run(
+        self, agent_name: str, message: str, cron_expr: str
+    ):
+        """Execute a single scheduled agent run."""
+        agent = self.agents.get(agent_name)
+        if agent is None:
+            logging.error("Scheduled run: agent %r not found", agent_name)
+            return
+        try:
+            result = await agent.run(message)
+            logging.info(
+                "Scheduled run completed: agent=%s cron=%r result_length=%d",
+                agent_name,
+                cron_expr,
+                len(result.text),
+            )
+        except Exception:
+            logging.exception(
+                "Scheduled run failed: agent=%s cron=%r", agent_name, cron_expr
+            )
+
     async def _delegate_to_agent(
         self, agent_name: str, message: str, depth: int, debug: bool = False
     ) -> AgentResult:
@@ -106,6 +188,8 @@ class AgentDaemon:
         click.echo(f"Daemon started (PID {os.getpid()})")
         click.echo(f"Socket: {sock_path}")
 
+        self._scheduler_task = asyncio.create_task(self._run_scheduler())
+
         async with self._server:
             await self._server.serve_forever()
 
@@ -128,12 +212,21 @@ class AgentDaemon:
                     ac = self.config.agents[name]
                     provider_name = ac.provider or self.config.provider
                     model = ac.model or self.config.model
+                    schedule_info = []
+                    for entry in self._schedule_entries:
+                        if entry["agent_name"] == name:
+                            schedule_info.append({
+                                "cron": entry["cron_expr"],
+                                "message": entry["message"],
+                                "next_run": entry["next_run"].isoformat(),
+                            })
                     agents_info[name] = {
                         "description": ac.description,
                         "provider": provider_name,
                         "model": model,
                         "tools": ac.tools,
                         "skills": ac.skills,
+                        "schedule": schedule_info,
                     }
                 response = {"type": "status", "agents": agents_info}
                 writer.write((json.dumps(response) + "\n").encode())
@@ -184,6 +277,12 @@ class AgentDaemon:
 
     async def shutdown(self):
         """Stop server and disconnect all agents."""
+        if self._scheduler_task:
+            self._scheduler_task.cancel()
+            try:
+                await self._scheduler_task
+            except asyncio.CancelledError:
+                pass
         if self._server:
             self._server.close()
         for agent in self.agents.values():
@@ -223,6 +322,15 @@ def start_daemon():
     os.dup2(devnull, 1)
     os.dup2(devnull, 2)
     os.close(devnull)
+
+    # Set up logging for scheduler
+    log_dir = config.project_dir / ".ezagent"
+    log_dir.mkdir(exist_ok=True)
+    logging.basicConfig(
+        filename=str(log_dir / "scheduler.log"),
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
 
     daemon = AgentDaemon(config)
 
@@ -290,15 +398,25 @@ def get_status() -> dict:
 
     # Build agent info from config (used when daemon isn't running)
     config_agents = {}
+    now = datetime.now(timezone.utc)
     for name, ac in config.agents.items():
         provider_name = ac.provider or config.provider
         model = ac.model or config.model
+        schedule_info = []
+        for entry in ac.schedule:
+            next_run = croniter(entry.cron, now).get_next(datetime)
+            schedule_info.append({
+                "cron": entry.cron,
+                "message": entry.message,
+                "next_run": next_run.isoformat(),
+            })
         config_agents[name] = {
             "description": ac.description,
             "provider": provider_name,
             "model": model,
             "tools": ac.tools,
             "skills": ac.skills,
+            "schedule": schedule_info,
         }
 
     pid_path = config.pid_path

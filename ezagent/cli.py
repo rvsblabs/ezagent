@@ -196,6 +196,11 @@ def status():
             tools = ", ".join(details.get("tools", [])) or "\u2014"
             skills = ", ".join(details.get("skills", [])) or "\u2014"
             click.echo(f"  {name:<16} {provider_model:<32} tools: {tools:<24} skills: {skills}")
+            for sched in details.get("schedule", []):
+                cron = sched.get("cron", "")
+                next_run = sched.get("next_run", "")
+                msg = sched.get("message", "")
+                click.echo(f"    schedule: {cron:<20} next: {next_run:<26} \"{msg}\"")
 
 
 @cli.command()

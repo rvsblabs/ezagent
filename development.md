@@ -170,6 +170,57 @@ uv run ez stop
 
 Memories persist in `.ezagent/memory/milvus.db` inside the project directory. The embedding model (`all-MiniLM-L6-v2`, ~90MB) downloads on first use. All dependencies (`pymilvus`, `sentence-transformers`) are installed automatically by `uv` in an isolated environment.
 
+## Testing Cron Scheduling
+
+Add a `schedule` to an agent in `agents.yml`. Use `* * * * *` (every minute) for quick testing:
+
+```yaml
+agents:
+  assistant:
+    tools: greeter
+    skills: friendly
+    description: "A friendly assistant that can greet people by name"
+    schedule:
+      - cron: "* * * * *"
+        message: "Say hello to the world"
+```
+
+### Verify config parsing (no daemon needed)
+
+```bash
+uv run ez status
+```
+
+You should see the schedule line printed below the agent with the cron expression, next run time, and message.
+
+### Run with the daemon
+
+```bash
+uv run ez start
+uv run ez status          # shows live next_run times from the daemon
+cat .ezagent/scheduler.log  # "Scheduler initialized", "Scheduler loop started"
+```
+
+Within a minute you'll see `Firing scheduled run` and `Scheduled run completed` (or `failed` if there's no API key) in the log.
+
+### Verify cron validation
+
+Invalid cron expressions are rejected at config load time:
+
+```bash
+uv run python -c "from ezagent.config import ScheduleEntry; ScheduleEntry(cron='bad', message='x')"
+# raises ValidationError
+```
+
+### Clean shutdown
+
+```bash
+uv run ez stop
+cat .ezagent/scheduler.log  # should show "Scheduler loop cancelled"
+```
+
+Agents without a `schedule` key are unaffected — they work exactly as before.
+
 ## Testing Agent-as-Tool Delegation
 
 Update `agents.yml` to have two agents where one delegates to the other:
@@ -254,6 +305,7 @@ uv run ez start
 | `daemon already running` | Previous daemon still active | Run `uv run ez stop` first |
 | `skill file not found` | Skill listed in YAML but `.md` file missing | Create the file in `skills/` |
 | `tool ... is neither an agent nor a tool directory` | Tool listed in YAML but no `main.py` | Create `tools/<name>/main.py` |
+| `Invalid cron expression` | Bad cron syntax in `schedule` | Fix the `cron` value in `agents.yml` |
 
 ### Run CLI directly without install
 
@@ -274,7 +326,7 @@ ezagent/
   config.py            # Pydantic models, YAML loading, validation
   scaffold.py          # ez init scaffolding
   agent.py             # Agent class with agentic tool-use loop
-  daemon.py            # Background daemon, Unix socket server, PID management
+  daemon.py            # Background daemon, Unix socket server, cron scheduler, PID management
   llm/
     base.py            # Abstract LLMProvider interface
     anthropic.py       # Anthropic implementation
