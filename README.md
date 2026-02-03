@@ -108,6 +108,7 @@ ezagent ships with prebuilt tools that don't require any local files. Add them t
 | `memory`     | Persistent vector-based memory (store, search, delete, list) using Milvus Lite and sentence-transformers |
 | `web_search` | Web search and page reading via Brave Search API (requires `BRAVE_SEARCH_API_KEY`) |
 | `http`       | Generic HTTP client for interacting with any REST API (no API key required by the tool) |
+| `filesystem` | Read, write, list, and create directories on the local file system (no API key required) |
 
 ```yaml
 agents:
@@ -176,6 +177,24 @@ agents:
   api_client:
     tools: http
     description: "An agent that can interact with REST APIs"
+```
+
+#### Filesystem tool
+
+The `filesystem` tool gives agents four operations:
+
+- **`read_file(path)`** — Read a file and return its contents. Truncates to 100,000 characters to avoid blowing up LLM context. Handles encoding errors gracefully.
+- **`write_file(path, content, append?)`** — Write (or append) content to a file. Creates parent directories automatically. `append` defaults to `false`.
+- **`list_directory(path)`** — List immediate children of a directory with name, type ("file" or "directory"), and size (bytes, for files).
+- **`create_directory(path)`** — Create a directory including parents (`mkdir -p` semantics, no error if it already exists).
+
+No API key or external dependencies required — uses Python stdlib only.
+
+```yaml
+agents:
+  coder:
+    tools: filesystem
+    description: "An agent that can read and write files"
 ```
 
 ### 4. Add skills
