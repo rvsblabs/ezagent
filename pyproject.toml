@@ -12,6 +12,12 @@ dependencies = [
     "pydantic>=2.0",
 ]
 
+[project.optional-dependencies]
+memory = [
+    "pymilvus[milvus_lite]>=2.4",
+    "sentence-transformers>=2.2",
+]
+
 [project.scripts]
 ez = "ezagent.cli:cli"
 

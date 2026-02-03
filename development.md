@@ -136,6 +136,40 @@ agents:
     description: "An assistant with multiple tools and skills"
 ```
 
+## Testing the Prebuilt Memory Tool
+
+Add `memory` to an agent's tools in `agents.yml`:
+
+```yaml
+agents:
+  assistant:
+    tools: greeter, memory
+    skills: friendly
+    description: "A friendly assistant with persistent memory"
+```
+
+Then test the four memory operations:
+
+```bash
+uv run ez start
+
+# Store a memory
+uv run ez assistant "Remember that my favorite color is blue"
+
+# Search memories
+uv run ez assistant "What is my favorite color?"
+
+# List all memories
+uv run ez assistant "List all my memories"
+
+# Delete a memory (use an ID returned from list/store)
+uv run ez assistant "Delete memory <id>"
+
+uv run ez stop
+```
+
+Memories persist in `.ezagent/memory/milvus.db` inside the project directory. The embedding model (`all-MiniLM-L6-v2`, ~90MB) downloads on first use. All dependencies (`pymilvus`, `sentence-transformers`) are installed automatically by `uv` in an isolated environment.
+
 ## Testing Agent-as-Tool Delegation
 
 Update `agents.yml` to have two agents where one delegates to the other:
@@ -246,4 +280,10 @@ ezagent/
     anthropic.py       # Anthropic implementation
   tools/
     manager.py         # FastMCP client lifecycle, schema conversion, dispatch
+    builtins/
+      __init__.py      # Prebuilt tool registry (PREBUILT_TOOLS dict)
+      memory/
+        __init__.py    # Package marker
+        main.py        # FastMCP server: store, search, delete, list
+        requirements.txt  # pymilvus, sentence-transformers
 ```

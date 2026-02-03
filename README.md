@@ -99,6 +99,43 @@ tools/
 
 Or a full `pyproject.toml` for more control. ezagent uses `uv` to run the tool in an isolated environment automatically.
 
+### Prebuilt tools
+
+ezagent ships with prebuilt tools that don't require any local files. Add them to your `agents.yml` tools list by name:
+
+| Tool     | Description                                                                 |
+| -------- | --------------------------------------------------------------------------- |
+| `memory` | Persistent vector-based memory (store, search, delete, list) using Milvus Lite and sentence-transformers |
+
+```yaml
+agents:
+  assistant:
+    tools: greeter, memory
+    description: "An assistant with persistent memory"
+```
+
+Prebuilt tool dependencies are installed automatically by `uv` in an isolated environment — no manual installation needed.
+
+#### Memory tool
+
+The `memory` tool gives agents five operations:
+
+- **`memory_store(content, collection?, tags?, agent_name?)`** — Store a text memory with optional tags and agent association.
+- **`memory_search(query, collection?, top_k?, agent_name?, tags?)`** — Semantic similarity search across stored memories.
+- **`memory_delete(memory_id, collection?)`** — Delete a memory by its UUID.
+- **`memory_list(collection?, agent_name?, limit?, offset?)`** — Browse stored memories with pagination.
+- **`memory_collections()`** — List all existing collections.
+
+All operations accept an optional `collection` parameter (defaults to `"memory"`). Use collections to organize memories into logical groups:
+
+```text
+conversations  — chat history and dialogue
+patterns       — recurring themes or learned behaviours
+facts          — factual knowledge
+```
+
+Memories are stored locally in `.ezagent/memory/milvus.db` inside the project directory. Embeddings are generated locally using the `all-MiniLM-L6-v2` model (downloaded on first use, ~90MB).
+
 ### 4. Add skills
 
 Skills are markdown files in `skills/` that get injected into the agent's system prompt:
@@ -144,6 +181,7 @@ ez stop
 | `ez start`                   | Start the agent daemon (background)     |
 | `ez stop`                    | Stop the daemon                         |
 | `ez status`                  | Show daemon status and configured agents|
+| `ez tools`                   | List available prebuilt and project tools|
 | `ez run <agent> <message>`   | Send a message to an agent              |
 | `ez <agent> <message>`       | Shorthand for `ez run`                  |
 
@@ -190,7 +228,8 @@ agents:
 
 - **Daemon**: Background process communicating over a Unix domain socket (`/tmp/ezagent_<hash>.sock`)
 - **Agents**: Each agent has a system prompt (built from skills), access to MCP tools, and can delegate to other agents
-- **Tools**: FastMCP servers connected via STDIO transport
+- **Tools**: FastMCP servers connected via STDIO transport (local tools in `tools/`, prebuilt tools shipped with ezagent)
+- **Prebuilt tools**: Built-in tools (e.g. `memory`) that ship with ezagent, run in isolated uv environments with their own dependencies
 - **Agent-as-tool**: Agents listed in another agent's `tools` become callable tools with a `{"message": string}` interface
 - **LLM**: Provider-agnostic design with an `LLMProvider` ABC; implements Anthropic and Google Gemini
 

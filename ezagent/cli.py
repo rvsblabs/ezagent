@@ -111,6 +111,46 @@ def create_skill_cmd(name: str):
 
 
 @cli.command()
+def tools():
+    """List available tools (prebuilt and project-local)."""
+    from ezagent.tools.builtins import PREBUILT_TOOLS
+
+    click.echo("Prebuilt tools (available to any project):")
+    for name, path in PREBUILT_TOOLS.items():
+        # Read the tool's main.py docstring for a description
+        main_py = path / "main.py"
+        desc = ""
+        if main_py.is_file():
+            import ast
+
+            try:
+                tree = ast.parse(main_py.read_text())
+                desc = ast.get_docstring(tree) or ""
+                # Use only the first line
+                desc = desc.split("\n")[0]
+            except Exception:
+                pass
+        click.echo(f"  {name:<16} {desc}")
+
+    project_dir = find_project_dir()
+    if project_dir is not None:
+        tools_dir = project_dir / "tools"
+        if tools_dir.is_dir():
+            local_tools = sorted(
+                d.name for d in tools_dir.iterdir()
+                if d.is_dir() and (d / "main.py").is_file()
+            )
+            if local_tools:
+                click.echo(f"\nProject tools ({project_dir.name}/tools/):")
+                for name in local_tools:
+                    click.echo(f"  {name}")
+            else:
+                click.echo("\nNo project tools found.")
+    else:
+        click.echo("\nNo project directory found (not inside an ezagent project).")
+
+
+@cli.command()
 def start():
     """Start the agent daemon."""
     from ezagent.daemon import start_daemon

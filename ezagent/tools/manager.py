@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional
 from fastmcp import Client
 from fastmcp.client.transports import PythonStdioTransport, UvStdioTransport
 
+from ezagent.tools.builtins import PREBUILT_TOOLS
+
 
 class ToolManager:
     """Manages FastMCP tool clients and agent-as-tool synthetic tools."""
@@ -19,7 +21,10 @@ class ToolManager:
         external_tool_paths: Optional[Dict[str, Path]] = None,
     ):
         self._project_dir = project_dir
-        self._tool_names = [t for t in tool_names if t not in agent_names]
+        self._tool_names = [
+            t for t in tool_names if t not in agent_names and t not in PREBUILT_TOOLS
+        ]
+        self._prebuilt_tool_names = [t for t in tool_names if t in PREBUILT_TOOLS]
         self._agent_tool_names = [t for t in tool_names if t in agent_names]
         self._external_tool_paths = external_tool_paths or {}
         self._clients: Dict[str, Client] = {}
@@ -27,7 +32,12 @@ class ToolManager:
         # Maps tool function name -> (client_key, original_name)
         self._tool_routing: Dict[str, tuple[str, str]] = {}
 
-    async def _connect_tool_dir(self, tool_name: str, tool_dir: Path):
+    async def _connect_tool_dir(
+        self,
+        tool_name: str,
+        tool_dir: Path,
+        env: Optional[Dict[str, str]] = None,
+    ):
         """Connect to a single MCP tool server in the given directory."""
         main_py = tool_dir / "main.py"
         if not main_py.is_file():
@@ -40,14 +50,19 @@ class ToolManager:
             transport = UvStdioTransport(
                 command=str(main_py),
                 project_directory=tool_dir,
+                **({"env_vars": env} if env else {}),
             )
         elif requirements.is_file():
             transport = UvStdioTransport(
                 command=str(main_py),
                 with_requirements=requirements,
+                **({"env_vars": env} if env else {}),
             )
         else:
-            transport = PythonStdioTransport(script_path=str(main_py))
+            transport = PythonStdioTransport(
+                script_path=str(main_py),
+                **({"env": env} if env else {}),
+            )
         client = Client(transport)
         await client.__aenter__()
         self._clients[tool_name] = client
@@ -67,6 +82,12 @@ class ToolManager:
         for tool_name in self._tool_names:
             tool_dir = tools_dir / tool_name
             await self._connect_tool_dir(tool_name, tool_dir)
+
+        # Connect prebuilt tools
+        prebuilt_env = {"EZAGENT_PROJECT_DIR": str(self._project_dir)}
+        for tool_name in self._prebuilt_tool_names:
+            tool_dir = PREBUILT_TOOLS[tool_name]
+            await self._connect_tool_dir(tool_name, tool_dir, env=prebuilt_env)
 
         # Connect external (git-cloned) tools
         for tool_name, tool_dir in self._external_tool_paths.items():
