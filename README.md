@@ -224,6 +224,41 @@ agents:
     description: "This agent inherits Google Gemini from the global config"
 ```
 
+## Scheduling
+
+Agents can be triggered automatically on a cron schedule. Add a `schedule` list to any agent in `agents.yml`:
+
+```yaml
+agents:
+  reporter:
+    tools: web_search, memory
+    description: "Generates daily reports"
+    schedule:
+      - cron: "0 9 * * *"
+        message: "Generate the daily summary report"
+      - cron: "0 */4 * * *"
+        message: "Check for anomalies"
+```
+
+Each entry has:
+
+| Field     | Description                          |
+| --------- | ------------------------------------ |
+| `cron`    | A standard cron expression (validated on load via [croniter](https://github.com/kiorky/croniter)) |
+| `message` | The message sent to the agent when the schedule fires |
+
+The scheduler runs as a background asyncio task inside the daemon alongside the Unix socket server. When the daemon starts, it computes the next run time for every entry and sleeps until the earliest one is due. Scheduled runs are fire-and-forget — they don't block each other or the socket server.
+
+Use `ez status` to see upcoming schedule times:
+
+```
+  reporter         anthropic/claude-sonnet-4-5   tools: web_search, memory
+    schedule: 0 9 * * *            next: 2026-02-04T09:00:00   "Generate the daily summary report"
+    schedule: 0 */4 * * *          next: 2026-02-03T16:00:00   "Check for anomalies"
+```
+
+Scheduler logs are written to `.ezagent/scheduler.log` inside the project directory.
+
 ## Architecture
 
 - **Daemon**: Background process communicating over a Unix domain socket (`/tmp/ezagent_<hash>.sock`)
@@ -231,6 +266,7 @@ agents:
 - **Tools**: FastMCP servers connected via STDIO transport (local tools in `tools/`, prebuilt tools shipped with ezagent)
 - **Prebuilt tools**: Built-in tools (e.g. `memory`) that ship with ezagent, run in isolated uv environments with their own dependencies
 - **Agent-as-tool**: Agents listed in another agent's `tools` become callable tools with a `{"message": string}` interface
+- **Scheduler**: Cron-based background task that fires agent runs on a schedule, running alongside the socket server in the same asyncio event loop
 - **LLM**: Provider-agnostic design with an `LLMProvider` ABC; implements Anthropic and Google Gemini
 
 ## TODO
