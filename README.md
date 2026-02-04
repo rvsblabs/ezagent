@@ -224,13 +224,16 @@ export GOOGLE_API_KEY=your-key-here
 ### 6. Run
 
 ```bash
-# Start the daemon
+# Start the daemon (runs in foreground; Ctrl+C to stop)
 ez start
 
-# Talk to an agent
+# Or run in the background
+ez start -d
+
+# Talk to an agent (in another terminal, or after starting with -d)
 ez researcher "What are the latest advances in quantum computing?"
 
-# Stop the daemon
+# Stop a background daemon
 ez stop
 ```
 
@@ -239,7 +242,8 @@ ez stop
 | Command                      | Description                             |
 | ---------------------------- | --------------------------------------- |
 | `ez init <name>`             | Scaffold a new project                  |
-| `ez start`                   | Start the agent daemon (background)     |
+| `ez start`                   | Start the agent daemon (foreground)     |
+| `ez start -d`                | Start the agent daemon in the background|
 | `ez stop`                    | Stop the daemon                         |
 | `ez status`                  | Show daemon status and configured agents|
 | `ez tools`                   | List available prebuilt and project tools|

@@ -151,11 +151,12 @@ def tools():
 
 
 @cli.command()
-def start():
+@click.option("--daemon", "-d", is_flag=True, default=False, help="Run in background (daemonize).")
+def start(daemon: bool):
     """Start the agent daemon."""
     from ezagent.daemon import start_daemon
 
-    start_daemon()
+    start_daemon(foreground=not daemon)
 
 
 @cli.command()

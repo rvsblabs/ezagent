@@ -56,7 +56,10 @@ export ANTHROPIC_API_KEY=sk-ant-...
 uv run ez start
 ```
 
-Verify it's running:
+This runs in the foreground — logs are printed to the terminal and Ctrl+C stops it.
+Use `uv run ez start -d` to run in the background instead.
+
+Verify it's running (in another terminal, or after starting with `-d`):
 
 ```bash
 uv run ez status
