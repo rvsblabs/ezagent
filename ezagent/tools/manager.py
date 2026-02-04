@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -32,6 +33,8 @@ class ToolManager:
         self._tool_schemas: Dict[str, Dict[str, Any]] = {}
         # Maps tool function name -> (client_key, original_name)
         self._tool_routing: Dict[str, tuple[str, str]] = {}
+        # Temp files created for auto-injected requirements; cleaned up on disconnect
+        self._temp_files: List[str] = []
 
     async def _connect_tool_dir(
         self,
@@ -54,9 +57,10 @@ class ToolManager:
                 **({"env_vars": env} if env else {}),
             )
         elif requirements.is_file():
+            effective_requirements = self._ensure_fastmcp_requirement(requirements)
             transport = UvStdioTransport(
                 command=str(main_py),
-                with_requirements=requirements,
+                with_requirements=effective_requirements,
                 **({"env_vars": env} if env else {}),
             )
         else:
@@ -75,6 +79,29 @@ class ToolManager:
             qualified_name = schema["name"]
             self._tool_schemas[qualified_name] = schema
             self._tool_routing[qualified_name] = (tool_name, tool.name)
+
+    def _ensure_fastmcp_requirement(self, requirements: Path) -> Path:
+        """Return a requirements path that includes ``fastmcp<3``.
+
+        If the original file already lists fastmcp, return it unchanged.
+        Otherwise create a temporary requirements file that includes the
+        original via ``-r`` and adds ``fastmcp<3``.
+        """
+        contents = requirements.read_text()
+        # Check if fastmcp is already specified (any version constraint)
+        for line in contents.splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and not stripped.startswith("-"):
+                pkg = stripped.split("=")[0].split("<")[0].split(">")[0].split("!")[0].split("[")[0].strip()
+                if pkg.lower() == "fastmcp":
+                    return requirements
+
+        # Create a temp file that pulls in the original and adds fastmcp
+        fd, tmp_path = tempfile.mkstemp(suffix=".txt", prefix="ez_requirements_")
+        with os.fdopen(fd, "w") as f:
+            f.write(f"-r {requirements}\nfastmcp<3\n")
+        self._temp_files.append(tmp_path)
+        return Path(tmp_path)
 
     async def connect(self):
         """Connect to all MCP tool servers and collect schemas."""
@@ -171,3 +198,11 @@ class ToolManager:
             except Exception:
                 pass
         self._clients.clear()
+
+        # Clean up temporary requirements files
+        for tmp_path in self._temp_files:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        self._temp_files.clear()

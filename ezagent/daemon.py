@@ -294,24 +294,68 @@ class AgentDaemon:
                 os.unlink(path)
 
 
-def start_daemon():
-    """Start the agent daemon in a background process."""
+def start_daemon(foreground: bool = True):
+    """Start the agent daemon.
+
+    Args:
+        foreground: If True (default), run in the current process with logs
+            printed to stderr. If False, double-fork into the background.
+    """
     try:
         config = load_config()
     except (FileNotFoundError, ValueError) as e:
         raise click.ClickException(str(e))
 
-    # Fork into background
+    if not foreground:
+        _start_background(config)
+        return
+
+    # --- Foreground mode ---
+    log_dir = config.project_dir / ".ezagent"
+    log_dir.mkdir(exist_ok=True)
+
+    log_fmt = "%(asctime)s %(levelname)s %(message)s"
+    file_handler = logging.FileHandler(str(log_dir / "scheduler.log"))
+    file_handler.setFormatter(logging.Formatter(log_fmt))
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setFormatter(logging.Formatter(log_fmt))
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(stderr_handler)
+
+    daemon = AgentDaemon(config)
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    def _signal_handler():
+        loop.create_task(daemon.shutdown())
+        loop.stop()
+
+    loop.add_signal_handler(signal.SIGTERM, _signal_handler)
+    loop.add_signal_handler(signal.SIGINT, _signal_handler)
+
+    try:
+        loop.run_until_complete(daemon.initialize())
+        loop.run_until_complete(daemon.start())
+    except Exception:
+        logging.exception("Daemon failed during startup")
+        loop.run_until_complete(daemon.shutdown())
+    finally:
+        loop.close()
+
+
+def _start_background(config: ProjectConfig):
+    """Double-fork into the background (original daemon behaviour)."""
     pid = os.fork()
     if pid > 0:
-        # Parent process — wait briefly then check child is alive
         click.echo(f"Starting daemon (PID {pid})...")
         return
 
-    # Child process — detach
     os.setsid()
 
-    # Second fork to fully daemonize
     pid2 = os.fork()
     if pid2 > 0:
         os._exit(0)
@@ -323,7 +367,6 @@ def start_daemon():
     os.dup2(devnull, 2)
     os.close(devnull)
 
-    # Set up logging for scheduler
     log_dir = config.project_dir / ".ezagent"
     log_dir.mkdir(exist_ok=True)
     logging.basicConfig(
