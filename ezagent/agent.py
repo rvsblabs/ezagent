@@ -47,10 +47,12 @@ class Agent:
         self._external_skill_paths = external_skill_paths or {}
         self._tool_manager: Optional[ToolManager] = None
         self._system_prompt: str = ""
+        self._skill_contents: Dict[str, str] = {}
+        self._skill_descriptions: Dict[str, str] = {}
 
     async def initialize(self):
         """Load skills and connect to MCP tools."""
-        # Build system prompt from description + skills
+        # Build system prompt from description + skill summaries
         parts = []
         if self.config.description:
             parts.append(f"You are: {self.config.description}")
@@ -64,7 +66,26 @@ class Agent:
                 skill_path = skills_dir / f"{skill}.md"
             if skill_path.is_file():
                 content = skill_path.read_text().strip()
-                parts.append(f"## Skill: {skill}\n{content}")
+                self._skill_contents[skill] = content
+                # Extract first non-empty line as description
+                description = ""
+                for line in content.splitlines():
+                    stripped = line.strip().lstrip("#").strip()
+                    if stripped:
+                        description = stripped
+                        break
+                self._skill_descriptions[skill] = description or skill
+
+        if self._skill_contents:
+            skill_lines = [
+                f"- {name}: {desc}"
+                for name, desc in self._skill_descriptions.items()
+            ]
+            parts.append(
+                "You have access to the following skills. "
+                "Call the `use_skill` tool to load full instructions for a skill before using it.\n"
+                + "\n".join(skill_lines)
+            )
 
         self._system_prompt = "\n\n".join(parts)
 
@@ -90,10 +111,31 @@ class Agent:
             )
 
         if debug:
-            loaded_skills = ", ".join(self.config.skills) if self.config.skills else "(none)"
-            debug_events.append(f"[{self.name}] Skills loaded: {loaded_skills}")
+            available_skills = ", ".join(self.config.skills) if self.config.skills else "(none)"
+            debug_events.append(f"[{self.name}] Skills available: {available_skills}")
 
         tools = self._tool_manager.get_tool_schemas() if self._tool_manager else []
+        if self._skill_contents:
+            skill_names = list(self._skill_contents.keys())
+            tools.append(
+                {
+                    "name": "use_skill",
+                    "description": (
+                        "Load the full instructions for a skill. Available skills: "
+                        + ", ".join(skill_names)
+                    ),
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "enum": skill_names,
+                            }
+                        },
+                        "required": ["name"],
+                    },
+                }
+            )
         messages: List[Dict[str, Any]] = [{"role": "user", "content": message}]
 
         while True:
@@ -163,6 +205,13 @@ class Agent:
         """Execute a tool call — either MCP tool or agent-as-tool delegation."""
         if self._tool_manager is None:
             return json.dumps({"error": "Tool manager not initialized"})
+
+        # Check if this is a use_skill call
+        if tool_name == "use_skill":
+            skill_name = arguments.get("name", "")
+            if skill_name in self._skill_contents:
+                return f"## Skill: {skill_name}\n{self._skill_contents[skill_name]}"
+            return json.dumps({"error": f"Unknown skill: {skill_name}"})
 
         # Check if this is an agent-as-tool
         delegated_agent = self._tool_manager.is_agent_tool(tool_name)

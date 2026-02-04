@@ -199,7 +199,7 @@ agents:
 
 ### 4. Add skills
 
-Skills are markdown files in `skills/` that get injected into the agent's system prompt:
+Skills are markdown files in `skills/` that are dynamically loaded by the agent via the `use_skill` tool. The system prompt only contains skill names and one-line summaries; the agent calls `use_skill("research")` to load full instructions on demand:
 
 ```markdown
 <!-- skills/research.md -->
@@ -323,7 +323,7 @@ Scheduler logs are written to `.ezagent/scheduler.log` inside the project direct
 ## Architecture
 
 - **Daemon**: Background process communicating over a Unix domain socket (`/tmp/ezagent_<hash>.sock`)
-- **Agents**: Each agent has a system prompt (built from skills), access to MCP tools, and can delegate to other agents
+- **Agents**: Each agent has a system prompt (with skill summaries), access to MCP tools, and can delegate to other agents. Skills are loaded on demand via the `use_skill` tool
 - **Tools**: FastMCP servers connected via STDIO transport (local tools in `tools/`, prebuilt tools shipped with ezagent)
 - **Prebuilt tools**: Built-in tools (e.g. `memory`) that ship with ezagent, run in isolated uv environments with their own dependencies
 - **Agent-as-tool**: Agents listed in another agent's `tools` become callable tools with a `{"message": string}` interface
