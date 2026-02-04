@@ -162,13 +162,11 @@ def memory_search(
 
     Args:
         query: The search query text.
-        collection: Optional collection name to search in. Defaults to "memory".
+        collection: Optional collection name to search in. If omitted, searches ALL collections.
         top_k: Maximum number of results to return (default 5).
         agent_name: Optional filter to only search memories from this agent.
         tags: Optional comma-separated tags to filter by.
     """
-    col = _full_collection_name(collection or DEFAULT_COLLECTION)
-    _ensure_collection(col)
     client = _get_client()
     vector = _embed(query)
 
@@ -184,27 +182,49 @@ def memory_search(
 
     filter_expr = " and ".join(filters) if filters else ""
 
-    results = client.search(
-        collection_name=col,
-        data=[vector],
-        limit=top_k,
-        output_fields=["content", "agent_name", "tags", "created_at"],
-        filter=filter_expr if filter_expr else None,
-    )
+    # Determine which collections to search
+    if collection is not None:
+        collections_to_search = [collection]
+    else:
+        all_collections = client.list_collections()
+        collections_to_search = [
+            c[len(COLLECTION_PREFIX):]
+            for c in all_collections
+            if c.startswith(COLLECTION_PREFIX)
+        ]
+        if not collections_to_search:
+            collections_to_search = [DEFAULT_COLLECTION]
 
     hits = []
-    for hit in results[0]:
-        entity = hit.get("entity", {})
-        hits.append(
-            {
-                "id": hit.get("id"),
-                "score": round(hit.get("distance", 0.0), 4),
-                "content": entity.get("content", ""),
-                "agent_name": entity.get("agent_name", ""),
-                "tags": entity.get("tags", ""),
-                "created_at": entity.get("created_at", ""),
-            }
+    for col_name in collections_to_search:
+        col = _full_collection_name(col_name)
+        _ensure_collection(col)
+
+        results = client.search(
+            collection_name=col,
+            data=[vector],
+            limit=top_k,
+            output_fields=["content", "agent_name", "tags", "created_at"],
+            filter=filter_expr if filter_expr else None,
         )
+
+        for hit in results[0]:
+            entity = hit.get("entity", {})
+            hits.append(
+                {
+                    "id": hit.get("id"),
+                    "score": round(hit.get("distance", 0.0), 4),
+                    "content": entity.get("content", ""),
+                    "collection": col_name,
+                    "agent_name": entity.get("agent_name", ""),
+                    "tags": entity.get("tags", ""),
+                    "created_at": entity.get("created_at", ""),
+                }
+            )
+
+    # Sort by score descending and cap at top_k
+    hits.sort(key=lambda h: h["score"], reverse=True)
+    hits = hits[:top_k]
 
     return json.dumps({"results": hits, "count": len(hits)})
 

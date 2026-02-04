@@ -118,6 +118,8 @@ Or use a `pyproject.toml` for full project-style dependency management. When eit
 
 ### Add a skill
 
+Skills are loaded dynamically: the system prompt only includes skill names and one-line summaries (extracted from the first non-empty line of the markdown file). The agent calls the `use_skill` tool to load full instructions on demand, keeping the context window lean when many skills are assigned.
+
 Create `skills/<skill_name>.md` with instructions for the agent:
 
 ```markdown
@@ -378,7 +380,7 @@ uv run ez --debug assistant "Hi, my name is Alice"
 Example output:
 
 ```
-[debug] [assistant] Skills loaded: friendly
+[debug] [assistant] Skills available: friendly
 [debug] [assistant] Calling LLM...
 [debug] [assistant] Tool call: greeter__greet({"name": "Alice"})
 [debug] [assistant] Tool result: Hello, Alice! Welcome to ezagent.
