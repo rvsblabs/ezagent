@@ -31,3 +31,5 @@ testproject/
 # Daemon runtime files
 *.sock
 *.pid
+
+portfolio_manager/

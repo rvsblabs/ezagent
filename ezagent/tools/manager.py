@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -78,20 +79,23 @@ class ToolManager:
     async def connect(self):
         """Connect to all MCP tool servers and collect schemas."""
         tools_dir = self._project_dir / "tools"
+        # Pass the full parent environment so user tools can access env vars.
+        # The MCP SDK's default env only includes a minimal set of variables.
+        base_env = dict(os.environ)
 
         for tool_name in self._tool_names:
             tool_dir = tools_dir / tool_name
-            await self._connect_tool_dir(tool_name, tool_dir)
+            await self._connect_tool_dir(tool_name, tool_dir, env=base_env)
 
         # Connect prebuilt tools
-        prebuilt_env = {"EZAGENT_PROJECT_DIR": str(self._project_dir)}
+        prebuilt_env = {**base_env, "EZAGENT_PROJECT_DIR": str(self._project_dir)}
         for tool_name in self._prebuilt_tool_names:
             tool_dir = PREBUILT_TOOLS[tool_name]
             await self._connect_tool_dir(tool_name, tool_dir, env=prebuilt_env)
 
         # Connect external (git-cloned) tools
         for tool_name, tool_dir in self._external_tool_paths.items():
-            await self._connect_tool_dir(tool_name, tool_dir)
+            await self._connect_tool_dir(tool_name, tool_dir, env=base_env)
 
         # Register synthetic agent-as-tool schemas
         for agent_name in self._agent_tool_names:
