@@ -1,1 +1,2 @@
+fastmcp<3
 requests>=2.28
