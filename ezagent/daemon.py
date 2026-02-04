@@ -348,6 +348,7 @@ def start_daemon():
         loop.run_until_complete(daemon.initialize())
         loop.run_until_complete(daemon.start())
     except Exception:
+        logging.exception("Daemon failed during startup")
         loop.run_until_complete(daemon.shutdown())
     finally:
         loop.close()
