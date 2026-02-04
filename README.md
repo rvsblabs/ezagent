@@ -323,7 +323,7 @@ Scheduler logs are written to `.ezagent/scheduler.log` inside the project direct
 ## Architecture
 
 - **Daemon**: Background process communicating over a Unix domain socket (`/tmp/ezagent_<hash>.sock`)
-- **Agents**: Each agent has a system prompt (with skill summaries), access to MCP tools, and can delegate to other agents. Skills are loaded on demand via the `use_skill` tool
+- **Agents**: Each agent has a system prompt (with skill summaries), access to MCP tools, and can delegate to other agents. Skills are loaded on demand via the `use_skill` tool. The agentic loop includes a 1-second delay between tool-call iterations to avoid hitting API rate limits
 - **Tools**: FastMCP servers connected via STDIO transport (local tools in `tools/`, prebuilt tools shipped with ezagent)
 - **Prebuilt tools**: Built-in tools (e.g. `memory`) that ship with ezagent, run in isolated uv environments with their own dependencies
 - **Agent-as-tool**: Agents listed in another agent's `tools` become callable tools with a `{"message": string}` interface

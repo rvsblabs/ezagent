@@ -427,6 +427,7 @@ uv run ez start
 | `skill file not found` | Skill listed in YAML but `.md` file missing | Create the file in `skills/` |
 | `tool ... is neither an agent nor a tool directory` | Tool listed in YAML but no `main.py` | Create `tools/<name>/main.py` |
 | `Invalid cron expression` | Bad cron syntax in `schedule` | Fix the `cron` value in `agents.yml` |
+| `429` / rate-limit errors from Anthropic | Too many API calls in quick succession | The agentic loop includes a 1-second delay between tool-loop iterations to mitigate this automatically |
 
 ### Run CLI directly without install
 
@@ -446,7 +447,7 @@ ezagent/
   cli.py               # Click CLI entry point (init, start, stop, status, run)
   config.py            # Pydantic models, YAML loading, validation
   scaffold.py          # ez init scaffolding
-  agent.py             # Agent class with agentic tool-use loop
+  agent.py             # Agent class with agentic tool-use loop (includes rate-limit delay between iterations)
   daemon.py            # Background daemon, Unix socket server, cron scheduler, PID management
   llm/
     base.py            # Abstract LLMProvider interface

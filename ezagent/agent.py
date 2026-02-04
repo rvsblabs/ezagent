@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -139,6 +140,10 @@ class Agent:
         messages: List[Dict[str, Any]] = [{"role": "user", "content": message}]
 
         while True:
+            # Pause between tool-loop iterations to avoid rate limits
+            if len(messages) > 1:
+                await asyncio.sleep(1.0)
+
             if debug:
                 debug_events.append(f"[{self.name}] Calling LLM...")
 

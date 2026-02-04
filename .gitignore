@@ -28,6 +28,8 @@ Thumbs.db
 # Testing
 testproject/
 
+portfolio_manager/
+
 # Daemon runtime files
 *.sock
 *.pid
