@@ -203,6 +203,23 @@ def status():
                 msg = sched.get("message", "")
                 click.echo(f"    schedule: {cron:<20} next: {next_run:<26} \"{msg}\"")
 
+    discussions = info.get("discussions", {})
+    if discussions:
+        click.echo("\nDiscussions:")
+        for name, details in discussions.items():
+            participants = ", ".join(details.get("participants", [])) or "\u2014"
+            termination = details.get("termination", "rounds")
+            max_rounds = details.get("max_rounds", 5)
+            click.echo(
+                f"  {name:<16} participants: {participants:<32} "
+                f"termination: {termination} max_rounds: {max_rounds}"
+            )
+            for sched in details.get("schedule", []):
+                cron = sched.get("cron", "")
+                next_run = sched.get("next_run", "")
+                msg = sched.get("message", "")
+                click.echo(f"    schedule: {cron:<20} next: {next_run:<26} \"{msg}\"")
+
 
 @cli.command()
 @click.argument("agent_name")
@@ -215,3 +232,13 @@ def run(ctx: click.Context, agent_name: str, message: tuple[str, ...]):
     debug = ctx.obj.get("debug", False)
     full_message = " ".join(message)
     send_message(agent_name, full_message, debug=debug)
+
+
+@cli.command("discuss")
+@click.argument("discussion_name")
+@click.argument("topic", nargs=-1, required=True)
+def discuss(discussion_name: str, topic: tuple[str, ...]):
+    """Run a multi-agent discussion. Usage: ez discuss <discussion> <topic>"""
+    from ezagent.daemon import send_discussion
+
+    send_discussion(discussion_name, " ".join(topic))

@@ -8,7 +8,6 @@ import signal
 import socket
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict
 
 import click
@@ -16,6 +15,7 @@ from croniter import croniter
 
 from ezagent.agent import Agent, AgentResult
 from ezagent.config import ProjectConfig, load_config
+from ezagent.discussion import DiscussionResult, DiscussionRuntime
 from ezagent.external import resolve_externals
 from ezagent.llm import create_provider
 
@@ -29,6 +29,7 @@ class AgentDaemon:
         self._server: asyncio.AbstractServer | None = None
         self._scheduler_task: asyncio.Task | None = None
         self._schedule_entries: list[dict] = []
+        self._checker_provider: Any = None  # reused for convergence checks
 
     async def initialize(self):
         """Create and initialize all agents."""
@@ -68,25 +69,48 @@ class AgentDaemon:
                 agent_runner=self._delegate_to_agent,
                 external_tool_paths=ext_tool_paths,
                 external_skill_paths=ext_skill_paths,
+                discussion_runner=self._delegate_to_discussion,
+                discussion_names=[
+                    t for t in agent_config.tools
+                    if t in self.config.discussions
+                ],
             )
             await agent.initialize()
             self.agents[name] = agent
 
+        # Create the convergence checker using the project's default provider.
+        # Reuse from cache if already created, otherwise create fresh.
+        checker_key = (self.config.provider, self.config.model)
+        self._checker_provider = provider_cache.get(
+            checker_key, create_provider(self.config.provider, self.config.model)
+        )
+
         self._build_schedule()
 
     def _build_schedule(self):
-        """Build the list of scheduled entries from agent configs."""
+        """Build the list of scheduled entries from agent and discussion configs."""
         now = datetime.now(timezone.utc)
         for name, agent_config in self.config.agents.items():
             for entry in agent_config.schedule:
                 cron_iter = croniter(entry.cron, now)
-                next_run = cron_iter.get_next(datetime)
                 self._schedule_entries.append({
-                    "agent_name": name,
+                    "kind": "agent",
+                    "name": name,
                     "cron_expr": entry.cron,
                     "message": entry.message,
                     "cron_iter": cron_iter,
-                    "next_run": next_run,
+                    "next_run": cron_iter.get_next(datetime),
+                })
+        for name, disc_config in self.config.discussions.items():
+            for entry in disc_config.schedule:
+                cron_iter = croniter(entry.cron, now)
+                self._schedule_entries.append({
+                    "kind": "discussion",
+                    "name": name,
+                    "cron_expr": entry.cron,
+                    "message": entry.message,  # becomes the topic
+                    "cron_iter": cron_iter,
+                    "next_run": cron_iter.get_next(datetime),
                 })
         if self._schedule_entries:
             logging.info(
@@ -113,40 +137,52 @@ class AgentDaemon:
                 for entry in self._schedule_entries:
                     if entry["next_run"] <= now:
                         logging.info(
-                            "Firing scheduled run: agent=%s cron=%r",
-                            entry["agent_name"],
+                            "Firing scheduled run: kind=%s name=%s cron=%r",
+                            entry["kind"],
+                            entry["name"],
                             entry["cron_expr"],
                         )
                         asyncio.create_task(
-                            self._execute_scheduled_run(
-                                entry["agent_name"],
-                                entry["message"],
-                                entry["cron_expr"],
-                            )
+                            self._execute_scheduled_run(entry)
                         )
                         entry["next_run"] = entry["cron_iter"].get_next(datetime)
         except asyncio.CancelledError:
             logging.info("Scheduler loop cancelled")
 
-    async def _execute_scheduled_run(
-        self, agent_name: str, message: str, cron_expr: str
-    ):
-        """Execute a single scheduled agent run."""
-        agent = self.agents.get(agent_name)
-        if agent is None:
-            logging.error("Scheduled run: agent %r not found", agent_name)
-            return
+    async def _execute_scheduled_run(self, entry: dict):
+        """Execute a single scheduled run — either an agent message or a discussion."""
+        kind = entry.get("kind", "agent")
+        name = entry["name"]
+        message = entry["message"]
+        cron_expr = entry["cron_expr"]
+
         try:
-            result = await agent.run(message)
-            logging.info(
-                "Scheduled run completed: agent=%s cron=%r result_length=%d",
-                agent_name,
-                cron_expr,
-                len(result.text),
-            )
+            if kind == "discussion":
+                logging.info(
+                    "Firing scheduled discussion: name=%s cron=%r topic=%r",
+                    name, cron_expr, message,
+                )
+                result = await self._run_discussion(name, message)
+                logging.info(
+                    "Scheduled discussion completed: name=%s state=%s",
+                    name, result.get("terminal_state", "unknown"),
+                )
+            else:
+                agent = self.agents.get(name)
+                if agent is None:
+                    logging.error("Scheduled run: agent %r not found", name)
+                    return
+                logging.info(
+                    "Firing scheduled agent run: agent=%s cron=%r", name, cron_expr
+                )
+                result = await agent.run(message)
+                logging.info(
+                    "Scheduled run completed: agent=%s cron=%r result_length=%d",
+                    name, cron_expr, len(result.text),
+                )
         except Exception:
             logging.exception(
-                "Scheduled run failed: agent=%s cron=%r", agent_name, cron_expr
+                "Scheduled run failed: kind=%s name=%s cron=%r", kind, name, cron_expr
             )
 
     async def _delegate_to_agent(
@@ -157,6 +193,49 @@ class AgentDaemon:
         if agent is None:
             return AgentResult(text=json.dumps({"error": f"Agent '{agent_name}' not found"}))
         return await agent.run(message, depth=depth, debug=debug)
+
+    async def _delegate_to_discussion(
+        self, discussion_name: str, topic: str
+    ) -> str:
+        """Callback for discussion-as-tool: returns the decision text."""
+        result = await self._run_discussion(discussion_name, topic)
+        return result.get("decision", "Discussion produced no decision.")
+
+    async def _run_discussion(self, discussion_name: str, topic: str) -> dict:
+        """Run a named discussion and return a serialisable result dict."""
+        disc_config = self.config.discussions.get(discussion_name)
+        if disc_config is None:
+            return {"error": f"Discussion '{discussion_name}' not found"}
+
+        missing = [
+            d.agent
+            for d in disc_config.participants
+            if d.agent not in self.agents
+        ]
+        if missing:
+            return {"error": f"Discussion '{discussion_name}': unknown agents {missing}"}
+
+        runtime = DiscussionRuntime(
+            name=discussion_name,
+            config=disc_config,
+            agents=self.agents,
+            checker_provider=self._checker_provider,
+        )
+        result: DiscussionResult = await runtime.run(topic)
+        return {
+            "terminal_state": result.terminal_state,
+            "decision": result.decision,
+            "dissent": result.dissent,
+            "rounds_completed": result.rounds_completed,
+            "transcript": [
+                {
+                    "agent": t.agent_name,
+                    "round": t.round_number,
+                    "content": t.content,
+                }
+                for t in result.transcript
+            ],
+        }
 
     async def start(self):
         """Start listening on Unix socket."""
@@ -212,14 +291,15 @@ class AgentDaemon:
                     ac = self.config.agents[name]
                     provider_name = ac.provider or self.config.provider
                     model = ac.model or self.config.model
-                    schedule_info = []
-                    for entry in self._schedule_entries:
-                        if entry["agent_name"] == name:
-                            schedule_info.append({
-                                "cron": entry["cron_expr"],
-                                "message": entry["message"],
-                                "next_run": entry["next_run"].isoformat(),
-                            })
+                    schedule_info = [
+                        {
+                            "cron": entry["cron_expr"],
+                            "message": entry["message"],
+                            "next_run": entry["next_run"].isoformat(),
+                        }
+                        for entry in self._schedule_entries
+                        if entry["kind"] == "agent" and entry["name"] == name
+                    ]
                     agents_info[name] = {
                         "description": ac.description,
                         "provider": provider_name,
@@ -228,8 +308,36 @@ class AgentDaemon:
                         "skills": ac.skills,
                         "schedule": schedule_info,
                     }
-                response = {"type": "status", "agents": agents_info}
+                discussions_info = {}
+                for name, dc in self.config.discussions.items():
+                    schedule_info = [
+                        {
+                            "cron": entry["cron_expr"],
+                            "message": entry["message"],
+                            "next_run": entry["next_run"].isoformat(),
+                        }
+                        for entry in self._schedule_entries
+                        if entry["kind"] == "discussion" and entry["name"] == name
+                    ]
+                    discussions_info[name] = {
+                        "participants": [p.agent for p in dc.participants],
+                        "termination": dc.termination,
+                        "max_rounds": dc.max_rounds,
+                        "moderator": dc.moderator,
+                        "schedule": schedule_info,
+                    }
+                response = {"type": "status", "agents": agents_info, "discussions": discussions_info}
                 writer.write((json.dumps(response) + "\n").encode())
+                await writer.drain()
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            if request.get("type") == "discuss":
+                discussion_name = request.get("discussion", "")
+                topic = request.get("topic", "")
+                result = await self._run_discussion(discussion_name, topic)
+                writer.write((json.dumps({"type": "discussion", **result}) + "\n").encode())
                 await writer.drain()
                 writer.close()
                 await writer.wait_closed()
@@ -438,6 +546,7 @@ def get_status() -> dict:
         "socket": config.socket_path,
         "project_dir": str(config.project_dir),
         "agents": {},
+        "discussions": {},
     }
 
     # Build agent info from config (used when daemon isn't running)
@@ -463,9 +572,29 @@ def get_status() -> dict:
             "schedule": schedule_info,
         }
 
+    # Build discussion info from config
+    config_discussions = {}
+    for name, dc in config.discussions.items():
+        schedule_info = []
+        for entry in dc.schedule:
+            next_run = croniter(entry.cron, now).get_next(datetime)
+            schedule_info.append({
+                "cron": entry.cron,
+                "message": entry.message,
+                "next_run": next_run.isoformat(),
+            })
+        config_discussions[name] = {
+            "participants": [p.agent for p in dc.participants],
+            "termination": dc.termination,
+            "max_rounds": dc.max_rounds,
+            "moderator": dc.moderator,
+            "schedule": schedule_info,
+        }
+
     pid_path = config.pid_path
     if not os.path.exists(pid_path):
         result["agents"] = config_agents
+        result["discussions"] = config_discussions
         return result
 
     with open(pid_path) as f:
@@ -509,12 +638,14 @@ def get_status() -> dict:
                 resp = json.loads(line)
                 if resp.get("type") == "status":
                     result["agents"] = resp.get("agents", {})
+                    result["discussions"] = resp.get("discussions", {})
                     return result
         except (ConnectionRefusedError, OSError, json.JSONDecodeError):
             pass
 
-    # Fallback to config agents if socket query failed
+    # Fallback to config info if socket query failed
     result["agents"] = config_agents
+    result["discussions"] = config_discussions
     return result
 
 
@@ -567,3 +698,70 @@ def send_message(agent_name: str, message: str, debug: bool = False):
                 click.echo(resp.get("text", ""))
         except json.JSONDecodeError:
             click.echo(line)
+
+
+def send_discussion(discussion_name: str, topic: str):
+    """Send a discuss request to the daemon and print the transcript + decision."""
+    try:
+        config = load_config()
+    except (FileNotFoundError, ValueError) as e:
+        raise click.ClickException(str(e))
+
+    sock_path = config.socket_path
+    if not os.path.exists(sock_path):
+        raise click.ClickException(
+            "Daemon is not running. Start it with: ez start"
+        )
+
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        sock.connect(sock_path)
+    except ConnectionRefusedError:
+        raise click.ClickException(
+            "Cannot connect to daemon. Try restarting with: ez stop && ez start"
+        )
+
+    request = json.dumps({"type": "discuss", "discussion": discussion_name, "topic": topic})
+    sock.sendall(request.encode())
+    sock.shutdown(socket.SHUT_WR)
+
+    buffer = b""
+    while True:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        buffer += chunk
+    sock.close()
+
+    for line in buffer.decode().strip().split("\n"):
+        if not line:
+            continue
+        try:
+            resp = json.loads(line)
+        except json.JSONDecodeError:
+            click.echo(line)
+            continue
+
+        if "error" in resp:
+            raise click.ClickException(resp["error"])
+
+        # Print each turn grouped by round
+        transcript = resp.get("transcript", [])
+        current_round = 0
+        for turn in transcript:
+            if turn["round"] != current_round:
+                current_round = turn["round"]
+                click.echo(f"\n{'─' * 60}")
+                click.echo(f"  Round {current_round}")
+                click.echo(f"{'─' * 60}")
+            click.echo(f"\n[{turn['agent'].upper()}]")
+            click.echo(turn["content"])
+
+        # Final outcome
+        state = resp.get("terminal_state", "unknown").upper().replace("_", " ")
+        click.echo(f"\n{'═' * 60}")
+        click.echo(f"  OUTCOME: {state}  (after {resp.get('rounds_completed', '?')} round(s))")
+        click.echo(f"{'═' * 60}")
+        click.echo(f"\n{resp.get('decision', '')}")
+        if resp.get("dissent"):
+            click.echo(f"\nDISSENT: {resp['dissent']}")
