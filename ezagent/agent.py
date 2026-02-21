@@ -36,6 +36,10 @@ class Agent:
         ] = None,
         external_tool_paths: Optional[Dict[str, Path]] = None,
         external_skill_paths: Optional[Dict[str, Path]] = None,
+        discussion_runner: Optional[
+            Callable[[str, str], Coroutine[Any, Any, str]]
+        ] = None,
+        discussion_names: Optional[List[str]] = None,
     ):
         self.name = name
         self.config = config
@@ -45,6 +49,8 @@ class Agent:
         self._agent_runner = agent_runner
         self._external_tool_paths = external_tool_paths or {}
         self._external_skill_paths = external_skill_paths or {}
+        self._discussion_runner = discussion_runner
+        self._discussion_names: List[str] = discussion_names or []
         self._tool_manager: Optional[ToolManager] = None
         self._system_prompt: str = ""
         self._skill_contents: Dict[str, str] = {}
@@ -89,10 +95,13 @@ class Agent:
 
         self._system_prompt = "\n\n".join(parts)
 
-        # Connect tool manager (pass only local tool names, externals handled separately)
+        # Connect tool manager (pass only local tool names, externals handled separately).
+        # Discussion names are handled separately by the discussion_runner callback,
+        # so exclude them here to avoid ToolManager trying to start an MCP server for them.
+        non_discussion_tools = [t for t in self.config.tools if t not in self._discussion_names]
         self._tool_manager = ToolManager(
             self.project_dir,
-            self.config.tools,
+            non_discussion_tools,
             self.agent_names,
             external_tool_paths=self._external_tool_paths,
         )
@@ -133,6 +142,25 @@ class Agent:
                             }
                         },
                         "required": ["name"],
+                    },
+                }
+            )
+        for disc_name in self._discussion_names:
+            tools.append(
+                {
+                    "name": disc_name,
+                    "description": (
+                        f"Run the '{disc_name}' multi-agent discussion and return the decision."
+                    ),
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "topic": {
+                                "type": "string",
+                                "description": "The topic or question for the agents to discuss",
+                            }
+                        },
+                        "required": ["topic"],
                     },
                 }
             )
@@ -233,6 +261,17 @@ class Agent:
             if isinstance(result, AgentResult):
                 return result.text
             return result
+
+        # Check if this is a discussion-as-tool
+        if tool_name in self._discussion_names:
+            if self._discussion_runner is None:
+                return json.dumps({"error": "Discussion runner not available"})
+            topic = arguments.get("topic", "")
+            if debug and debug_events is not None:
+                debug_events.append(
+                    f"[{self.name}] Starting discussion '{tool_name}' on topic: {topic}"
+                )
+            return await self._discussion_runner(tool_name, topic)
 
         return await self._tool_manager.call_tool(tool_name, arguments)
 

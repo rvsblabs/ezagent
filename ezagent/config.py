@@ -43,8 +43,26 @@ class AgentConfig(BaseModel):
         return v
 
 
+class DiscussantConfig(BaseModel):
+    agent: str
+    role: str = ""
+
+
+class DiscussionConfig(BaseModel):
+    participants: List[DiscussantConfig]
+    max_rounds: int = 5
+    max_tokens: int = 50_000
+    max_duration: int = 300
+    termination: str = "rounds"  # "rounds" | "consensus"
+    moderator: Optional[str] = None
+    on_deadlock: List[str] = ["moderator_decides"]
+    # "moderator_decides" | "human_approval" | "record_and_move_on"
+    schedule: List[ScheduleEntry] = []
+
+
 class ProjectConfig(BaseModel):
     agents: Dict[str, AgentConfig]
+    discussions: Dict[str, DiscussionConfig] = {}
     project_dir: Path
     provider: str = "anthropic"
     model: str = ""
@@ -54,6 +72,7 @@ class ProjectConfig(BaseModel):
     @model_validator(mode="after")
     def validate_project(self):
         agent_names = set(self.agents.keys())
+        discussion_names = set(self.discussions.keys())
         tools_dir = self.project_dir / "tools"
         skills_dir = self.project_dir / "skills"
 
@@ -68,7 +87,8 @@ class ProjectConfig(BaseModel):
                         f"Agent '{name}': skill file not found: {skill_path}"
                     )
 
-            # Validate tools: each must be either a tool dir or another agent name (skip git refs and prebuilts)
+            # Validate tools: each must be a tool dir, agent name, discussion name,
+            # prebuilt, or git ref
             for tool in agent.tools:
                 if is_git_ref(tool):
                     continue
@@ -76,18 +96,47 @@ class ProjectConfig(BaseModel):
                     continue
                 if tool in agent_names:
                     continue
+                if tool in discussion_names:
+                    continue
                 tool_main = tools_dir / tool / "main.py"
                 if not tool_main.is_file():
                     raise ValueError(
-                        f"Agent '{name}': tool '{tool}' is neither an agent "
-                        f"nor a tool directory with main.py at {tool_main}"
+                        f"Agent '{name}': tool '{tool}' is neither an agent, "
+                        f"a discussion, nor a tool directory with main.py at {tool_main}"
                     )
 
             # Check for self-reference
             if name in agent.tools:
                 raise ValueError(f"Agent '{name}' lists itself as a tool")
 
+        # Validate discussion configs
+        valid_terminations = {"rounds", "consensus"}
+        valid_deadlock_actions = {"moderator_decides", "human_approval", "record_and_move_on"}
+        for disc_name, disc in self.discussions.items():
+            if disc.termination not in valid_terminations:
+                raise ValueError(
+                    f"Discussion '{disc_name}': termination must be one of "
+                    f"{valid_terminations}, got {disc.termination!r}"
+                )
+            for action in disc.on_deadlock:
+                if action not in valid_deadlock_actions:
+                    raise ValueError(
+                        f"Discussion '{disc_name}': on_deadlock action must be one of "
+                        f"{valid_deadlock_actions}, got {action!r}"
+                    )
+            for discussant in disc.participants:
+                if discussant.agent not in agent_names:
+                    raise ValueError(
+                        f"Discussion '{disc_name}': participant agent "
+                        f"'{discussant.agent}' is not defined"
+                    )
+            if disc.moderator is not None and disc.moderator not in agent_names:
+                raise ValueError(
+                    f"Discussion '{disc_name}': moderator '{disc.moderator}' is not defined"
+                )
+
         # Check for circular agent references (simple DFS)
+        # Discussions are not included since they are not part of the agent graph
         def _has_cycle(agent_name: str, visited: set, stack: set) -> bool:
             visited.add(agent_name)
             stack.add(agent_name)
@@ -153,6 +202,7 @@ def load_config(project_dir: Optional[Path] = None) -> ProjectConfig:
 
     return ProjectConfig(
         agents=raw["agents"],
+        discussions=raw.get("discussions", {}),
         project_dir=project_dir,
         provider=raw.get("provider", "anthropic"),
         model=raw.get("model", ""),
