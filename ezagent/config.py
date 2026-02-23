@@ -171,6 +171,10 @@ class ProjectConfig(BaseModel):
         h = hashlib.md5(str(self.project_dir.resolve()).encode()).hexdigest()[:12]
         return f"/tmp/ezagent_{h}.pid"
 
+    @property
+    def events_db_path(self) -> Path:
+        return self.project_dir / ".ezagent" / "events.db"
+
 
 def find_project_dir() -> Optional[Path]:
     """Walk up from cwd to find a directory containing agents.yml."""

@@ -10,6 +10,7 @@ from ezagent.llm.base import LLMProvider
 
 if TYPE_CHECKING:
     from ezagent.agent import Agent
+    from ezagent.event_log import EventLogger
 
 
 @dataclass
@@ -47,42 +48,64 @@ class DiscussionRuntime:
         config: DiscussionConfig,
         agents: Dict[str, "Agent"],
         checker_provider: LLMProvider,
+        event_logger: Optional["EventLogger"] = None,
     ):
         self.name = name
         self.config = config
         self.agents = agents
         self.checker = checker_provider
+        self._event_logger = event_logger
         self.transcript: List[Turn] = []
 
     async def run(self, topic: str) -> DiscussionResult:
         start = time.monotonic()
+
+        # Start event log entry
+        discussion_uuid: Optional[str] = None
+        if self._event_logger is not None:
+            discussion_uuid = await self._event_logger.start_discussion(self.name, topic)
+
         # Maps agent_name -> content of their last turn, for drift detection
         prev_positions: Dict[str, str] = {}
 
+        result: Optional[DiscussionResult] = None
         for round_num in range(1, self.config.max_rounds + 1):
 
             # --- wall-clock guard ---
             if time.monotonic() - start > self.config.max_duration:
-                return await self._escalate(topic, "timeout")
+                result = await self._escalate(topic, "timeout")
+                break
 
             # --- each participant takes a turn ---
             for discussant in self.config.participants:
                 prompt = self._build_turn_prompt(
                     topic, discussant.agent, discussant.role, round_num
                 )
-                result = await self.agents[discussant.agent].run(prompt)
-                self.transcript.append(
-                    Turn(
-                        agent_name=discussant.agent,
-                        role=discussant.role,
-                        content=result.text,
-                        round_number=round_num,
-                    )
+                agent_result = await self.agents[discussant.agent].run(
+                    prompt,
+                    source="discussion",
+                    parent_run_uuid=discussion_uuid,
                 )
+                turn = Turn(
+                    agent_name=discussant.agent,
+                    role=discussant.role,
+                    content=agent_result.text,
+                    round_number=round_num,
+                )
+                self.transcript.append(turn)
+                if self._event_logger is not None and discussion_uuid is not None:
+                    self._event_logger.log_discussion_turn(
+                        discussion_uuid,
+                        discussant.agent,
+                        discussant.role,
+                        agent_result.text,
+                        round_num,
+                    )
 
             # --- token budget guard ---
             if self._approx_tokens() > self.config.max_tokens:
-                return await self._escalate(topic, "token_limit")
+                result = await self._escalate(topic, "token_limit")
+                break
 
             # --- convergence + drift checks (only when termination="consensus") ---
             if self.config.termination == "consensus":
@@ -90,7 +113,7 @@ class DiscussionRuntime:
 
                 if check["converged"]:
                     dissenters = check.get("dissenters") or []
-                    return DiscussionResult(
+                    result = DiscussionResult(
                         topic=topic,
                         discussion_name=self.name,
                         terminal_state=check.get("type", "full_consensus"),
@@ -99,20 +122,35 @@ class DiscussionRuntime:
                         transcript=self.transcript,
                         rounds_completed=round_num,
                     )
+                    break
 
                 # Positions frozen across two consecutive rounds → deadlock
                 curr_positions = self._latest_positions()
                 if prev_positions and curr_positions == prev_positions:
-                    return await self._escalate(topic, "frozen")
+                    result = await self._escalate(topic, "frozen")
+                    break
                 prev_positions = curr_positions
 
-        # --- max rounds exhausted ---
-        if self.config.termination == "rounds":
-            # Expected happy path: moderator synthesises from the full transcript
-            return await self._moderator_synthesis(topic, reason=None)
+        if result is None:
+            # --- max rounds exhausted ---
+            if self.config.termination == "rounds":
+                # Expected happy path: moderator synthesises from the full transcript
+                result = await self._moderator_synthesis(topic, reason=None)
+            else:
+                # consensus mode that never converged and wasn't caught by drift/timeout
+                result = await self._escalate(topic, "max_rounds")
 
-        # consensus mode that never converged and wasn't caught by drift/timeout
-        return await self._escalate(topic, "max_rounds")
+        if self._event_logger is not None and discussion_uuid is not None:
+            self._event_logger.finish_discussion(
+                discussion_uuid,
+                terminal_state=result.terminal_state,
+                decision=result.decision,
+                dissent=result.dissent,
+                rounds=result.rounds_completed,
+                status="success",
+            )
+
+        return result
 
     # ------------------------------------------------------------------ #
     # Internal helpers

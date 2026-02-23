@@ -8,7 +8,7 @@ import signal
 import socket
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import click
 from croniter import croniter
@@ -16,6 +16,7 @@ from croniter import croniter
 from ezagent.agent import Agent, AgentResult
 from ezagent.config import ProjectConfig, load_config
 from ezagent.discussion import DiscussionResult, DiscussionRuntime
+from ezagent.event_log import EventLogger
 from ezagent.external import resolve_externals
 from ezagent.llm import create_provider
 
@@ -30,9 +31,11 @@ class AgentDaemon:
         self._scheduler_task: asyncio.Task | None = None
         self._schedule_entries: list[dict] = []
         self._checker_provider: Any = None  # reused for convergence checks
+        self._event_logger: EventLogger = EventLogger()
 
     async def initialize(self):
         """Create and initialize all agents."""
+        self._event_logger.setup(self.config.events_db_path)
         agent_names = list(self.config.agents.keys())
         # Cache providers by (provider_name, model) to avoid duplicate clients
         provider_cache: Dict[tuple, Any] = {}
@@ -74,6 +77,7 @@ class AgentDaemon:
                     t for t in agent_config.tools
                     if t in self.config.discussions
                 ],
+                event_logger=self._event_logger,
             )
             await agent.initialize()
             self.agents[name] = agent
@@ -175,7 +179,7 @@ class AgentDaemon:
                 logging.info(
                     "Firing scheduled agent run: agent=%s cron=%r", name, cron_expr
                 )
-                result = await agent.run(message)
+                result = await agent.run(message, source="scheduled")
                 logging.info(
                     "Scheduled run completed: agent=%s cron=%r result_length=%d",
                     name, cron_expr, len(result.text),
@@ -186,13 +190,22 @@ class AgentDaemon:
             )
 
     async def _delegate_to_agent(
-        self, agent_name: str, message: str, depth: int, debug: bool = False
+        self,
+        agent_name: str,
+        message: str,
+        depth: int,
+        debug: bool = False,
+        source: str = "delegation",
+        parent_run_uuid: Optional[str] = None,
     ) -> AgentResult:
         """Callback for agent-as-tool delegation."""
         agent = self.agents.get(agent_name)
         if agent is None:
             return AgentResult(text=json.dumps({"error": f"Agent '{agent_name}' not found"}))
-        return await agent.run(message, depth=depth, debug=debug)
+        return await agent.run(
+            message, depth=depth, debug=debug,
+            source=source, parent_run_uuid=parent_run_uuid,
+        )
 
     async def _delegate_to_discussion(
         self, discussion_name: str, topic: str
@@ -220,6 +233,7 @@ class AgentDaemon:
             config=disc_config,
             agents=self.agents,
             checker_provider=self._checker_provider,
+            event_logger=self._event_logger,
         )
         result: DiscussionResult = await runtime.run(topic)
         return {
