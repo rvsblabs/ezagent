@@ -5,7 +5,7 @@ from pathlib import Path
 import click
 
 from ezagent.config import find_project_dir
-from ezagent.scaffold import create_project, create_skill, create_tool
+from ezagent.scaffold import PROJECT_CLAUDE_MD, create_project, create_skill, create_tool
 
 
 class EzGroup(click.Group):
@@ -63,6 +63,7 @@ def init(app_name: str):
         click.echo(f"  {app_name}/tools/     — add FastMCP tool servers here")
         click.echo(f"  {app_name}/skills/    — add skill .md files here")
         click.echo(f"  {app_name}/agents.yml — configure your agents")
+        click.echo(f"  {app_name}/CLAUDE.md  — Claude Code project guide (run 'ez update-docs' after upgrading ezagent)")
     except FileExistsError as e:
         raise click.ClickException(str(e))
 
@@ -108,6 +109,23 @@ def create_skill_cmd(name: str):
             click.echo(f"\nNext: add '{name}' to an agent's skills list in agents.yml")
     except FileExistsError as e:
         raise click.ClickException(str(e))
+
+
+@cli.command("update-docs")
+def update_docs():
+    """Regenerate CLAUDE.md from the current ezagent version's template."""
+    project_dir = find_project_dir()
+    if project_dir is None:
+        raise click.ClickException(
+            "No agents.yml found. Run this from inside an ezagent project."
+        )
+    claude_md = project_dir / "CLAUDE.md"
+    existed = claude_md.exists()
+    claude_md.write_text(PROJECT_CLAUDE_MD)
+    if existed:
+        click.echo(f"Updated {claude_md} with the latest ezagent template.")
+    else:
+        click.echo(f"Created {claude_md}")
 
 
 @cli.command()

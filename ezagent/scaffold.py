@@ -68,6 +68,143 @@ SKILL_TEMPLATE = """\
 Describe what this skill does and how the agent should behave.
 """
 
+PROJECT_CLAUDE_MD = """\
+# ezagent Project
+
+This is an [ezagent](https://github.com/rvsblabs/ezagent) project.
+Agents, tools, and skills are defined in `agents.yml`.
+
+## Project Structure
+```
+agents.yml          # Agent configuration (edit this to add/configure agents)
+tools/              # FastMCP tool servers — one subdirectory per tool
+  <tool_name>/
+    main.py         # FastMCP server code
+    requirements.txt  # Optional Python dependencies (auto-installed by uv)
+skills/             # Skill instruction files
+  <skill_name>.md   # First non-empty line becomes the skill summary
+```
+
+## CLI Commands
+```bash
+ez start                        # Start daemon (foreground, Ctrl+C to stop)
+ez start -d                     # Start daemon in background
+ez stop                         # Stop daemon
+ez status                       # Show running agents and scheduled tasks
+ez <agent> "<message>"          # Send a message to an agent
+ez run <agent> "<message>"      # Explicit form of the above
+ez --debug <agent> "<message>"  # Show tool calls and LLM steps
+ez create tool <name>           # Scaffold a new tool in tools/
+ez create skill <name>          # Scaffold a new skill in skills/
+```
+
+## Creating a Tool
+Tools are [FastMCP](https://github.com/jlowin/fastmcp) servers. Create `tools/<name>/main.py`:
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("my_tool")
+
+@mcp.tool()
+def my_function(param: str) -> str:
+    \\"\\"\\"Describe what this function does.\\"\\"\\"
+    return f"result: {param}"
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+Add Python dependencies in `tools/<name>/requirements.txt` (one per line).
+ezagent uses `uv` to run each tool in an isolated environment automatically.
+
+Then wire the tool into `agents.yml`:
+```yaml
+agents:
+  my_agent:
+    tools: my_tool   # comma-separated list of tool names
+```
+
+## Creating a Skill
+Skills are markdown files loaded on demand by the agent. Create `skills/<name>.md`:
+```markdown
+You are an expert at X.
+When asked to do Y, follow these steps:
+1. Step one
+2. Step two
+```
+The first non-empty line becomes the one-line summary shown in the system prompt.
+The full content is loaded only when the agent calls `use_skill("<name>")`.
+
+## agents.yml Reference
+```yaml
+provider: anthropic          # "anthropic" | "google"  (global default)
+model: claude-sonnet-4-20250514  # optional — overrides provider default
+
+agents:
+  <name>:
+    tools: tool1, other_agent, memory   # CSV: local tools, other agent names, prebuilt names
+    skills: skill1, skill2              # CSV: markdown files in skills/ (omit .md)
+    description: "What this agent does" # Becomes the system prompt prefix
+    provider: anthropic                 # optional per-agent provider override
+    model: "..."                        # optional per-agent model override
+    schedule:                           # optional cron triggers
+      - cron: "0 9 * * *"
+        message: "Generate daily report"
+
+discussions:
+  <name>:
+    participants:
+      - agent: agent1
+        role: "Proponent"
+      - agent: agent2
+        role: "Skeptic"
+    max_rounds: 5
+    termination: rounds    # "rounds" | "consensus"
+    moderator: agent3      # optional
+    on_deadlock:
+      - moderator_decides  # "moderator_decides" | "human_approval" | "record_and_move_on"
+```
+
+## Prebuilt Tools (no files needed — just add the name to tools in agents.yml)
+| Name         | What it does                                    | Env var required       |
+|--------------|-------------------------------------------------|------------------------|
+| `memory`     | Persistent semantic memory (store/search/list)  | —                      |
+| `web_search` | Web search + read page content (Brave)          | BRAVE_SEARCH_API_KEY   |
+| `http`       | Generic HTTP client (GET/POST/PUT/PATCH/DELETE) | —                      |
+| `filesystem` | Read/write/list local files and directories     | —                      |
+| `arxiv`      | Search and read ArXiv papers                    | —                      |
+| `pdf_reader` | Extract text from PDF files                     | —                      |
+
+## Agent Delegation
+Agents can delegate to other agents by listing them in `tools`. The delegating agent
+calls them like any other tool with a `{"message": "..."}` input:
+```yaml
+agents:
+  manager:
+    tools: worker          # manager can delegate to worker
+    description: "Delegates research tasks"
+  worker:
+    tools: web_search
+    description: "Performs research"
+```
+
+## Required Environment Variables
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...   # for provider: anthropic (default)
+export GOOGLE_API_KEY=...             # for provider: google
+export BRAVE_SEARCH_API_KEY=...       # only if using the web_search prebuilt tool
+```
+
+## Troubleshooting
+| Error | Fix |
+|-------|-----|
+| `No agents.yml found` | Run from the project directory |
+| `skill file not found` | Create `skills/<name>.md` |
+| `tool ... neither an agent nor a tool directory` | Create `tools/<name>/main.py` |
+| `daemon already running` | Run `ez stop` first |
+| Stale socket after crash | `rm /tmp/ezagent_*.sock /tmp/ezagent_*.pid` |
+"""
+
 
 def create_tool(name: str, base_dir: Path) -> Path:
     """Scaffold a new tool directory with main.py and requirements.txt.
@@ -119,5 +256,8 @@ def create_project(app_name: str) -> Path:
 
     # Create agents.yml wired to the sample tool and skill
     (base / "agents.yml").write_text(EXAMPLE_AGENTS_YML)
+
+    # Create CLAUDE.md so Claude Code understands this is an ezagent project
+    (base / "CLAUDE.md").write_text(PROJECT_CLAUDE_MD)
 
     return base

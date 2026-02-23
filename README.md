@@ -249,6 +249,7 @@ ez stop
 | `ez tools`                   | List available prebuilt and project tools|
 | `ez run <agent> <message>`   | Send a message to an agent              |
 | `ez <agent> <message>`       | Shorthand for `ez run`                  |
+| `ez update-docs`             | Regenerate CLAUDE.md from the current ezagent template (run after upgrading) |
 
 ## Providers
 
