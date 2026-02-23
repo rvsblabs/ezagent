@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Dict, List, Optional
 
 from ezagent.config import AgentConfig
 from ezagent.llm.base import LLMProvider, LLMResponse
 from ezagent.tools.manager import ToolManager
+
+if TYPE_CHECKING:
+    from ezagent.event_log import EventLogger
 
 MAX_RECURSION_DEPTH = 10
 MAX_DEBUG_RESULT_LENGTH = 200
@@ -32,7 +35,7 @@ class Agent:
         provider: LLMProvider,
         agent_names: List[str],
         agent_runner: Optional[
-            Callable[[str, str, int, bool], Coroutine[Any, Any, "AgentResult"]]
+            Callable[[str, str, int, bool, str, Optional[str]], Coroutine[Any, Any, "AgentResult"]]
         ] = None,
         external_tool_paths: Optional[Dict[str, Path]] = None,
         external_skill_paths: Optional[Dict[str, Path]] = None,
@@ -40,6 +43,7 @@ class Agent:
             Callable[[str, str], Coroutine[Any, Any, str]]
         ] = None,
         discussion_names: Optional[List[str]] = None,
+        event_logger: Optional["EventLogger"] = None,
     ):
         self.name = name
         self.config = config
@@ -51,6 +55,7 @@ class Agent:
         self._external_skill_paths = external_skill_paths or {}
         self._discussion_runner = discussion_runner
         self._discussion_names: List[str] = discussion_names or []
+        self._event_logger: Optional["EventLogger"] = event_logger
         self._tool_manager: Optional[ToolManager] = None
         self._system_prompt: str = ""
         self._skill_contents: Dict[str, str] = {}
@@ -108,7 +113,12 @@ class Agent:
         await self._tool_manager.connect()
 
     async def run(
-        self, message: str, depth: int = 0, debug: bool = False
+        self,
+        message: str,
+        depth: int = 0,
+        debug: bool = False,
+        source: str = "manual",
+        parent_run_uuid: Optional[str] = None,
     ) -> AgentResult:
         """Run the agentic loop: send message, handle tool calls, repeat."""
         debug_events: List[str] = []
@@ -117,6 +127,13 @@ class Agent:
             return AgentResult(
                 text=f"[Error: Maximum agent recursion depth ({MAX_RECURSION_DEPTH}) reached]",
                 debug_events=debug_events,
+            )
+
+        # Start event log entry
+        run_uuid: Optional[str] = None
+        if self._event_logger is not None:
+            run_uuid = await self._event_logger.start_agent_run(
+                self.name, message, source, depth, parent_run_uuid
             )
 
         if debug:
@@ -166,61 +183,93 @@ class Agent:
             )
         messages: List[Dict[str, Any]] = [{"role": "user", "content": message}]
 
-        while True:
-            if debug:
-                debug_events.append(f"[{self.name}] Calling LLM...")
-
-            response: LLMResponse = await self.provider.chat(
-                messages=messages,
-                system=self._system_prompt,
-                tools=tools if tools else None,
-            )
-
-            # If no tool calls, return the text response
-            if not response.tool_calls:
-                return AgentResult(text=response.text, debug_events=debug_events)
-
-            # Build assistant message with all content blocks
-            assistant_content: List[Dict[str, Any]] = []
-            if response.text:
-                assistant_content.append({"type": "text", "text": response.text})
-            for tc in response.tool_calls:
-                assistant_content.append(
-                    {
-                        "type": "tool_use",
-                        "id": tc.id,
-                        "name": tc.name,
-                        "input": tc.input,
-                    }
-                )
-            messages.append({"role": "assistant", "content": assistant_content})
-
-            # Execute each tool call and collect results
-            tool_results: List[Dict[str, Any]] = []
-            for tc in response.tool_calls:
+        llm_call_number = 0
+        try:
+            while True:
                 if debug:
-                    debug_events.append(
-                        f"[{self.name}] Tool call: {tc.name}({json.dumps(tc.input)})"
+                    debug_events.append(f"[{self.name}] Calling LLM...")
+
+                llm_call_number += 1
+                llm_call_uuid: Optional[str] = None
+                if self._event_logger is not None and run_uuid is not None:
+                    llm_call_uuid = await self._event_logger.start_llm_call(
+                        run_uuid, llm_call_number
                     )
 
-                result_text = await self._execute_tool(
-                    tc.name, tc.input, depth, debug, debug_events
+                response: LLMResponse = await self.provider.chat(
+                    messages=messages,
+                    system=self._system_prompt,
+                    tools=tools if tools else None,
                 )
 
-                if debug:
-                    truncated = result_text[:MAX_DEBUG_RESULT_LENGTH]
-                    if len(result_text) > MAX_DEBUG_RESULT_LENGTH:
-                        truncated += "..."
-                    debug_events.append(f"[{self.name}] Tool result: {truncated}")
+                if self._event_logger is not None and llm_call_uuid is not None:
+                    tool_calls_json = (
+                        json.dumps([{"name": tc.name, "input": tc.input} for tc in response.tool_calls])
+                        if response.tool_calls
+                        else None
+                    )
+                    self._event_logger.finish_llm_call(
+                        llm_call_uuid,
+                        output_text=response.text,
+                        tool_calls_json=tool_calls_json,
+                        stop_reason=response.stop_reason,
+                    )
 
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tc.id,
-                        "content": result_text,
-                    }
+                # If no tool calls, return the text response
+                if not response.tool_calls:
+                    if self._event_logger is not None and run_uuid is not None:
+                        self._event_logger.finish_agent_run(run_uuid, response.text, "success")
+                    return AgentResult(text=response.text, debug_events=debug_events)
+
+                # Build assistant message with all content blocks
+                assistant_content: List[Dict[str, Any]] = []
+                if response.text:
+                    assistant_content.append({"type": "text", "text": response.text})
+                for tc in response.tool_calls:
+                    assistant_content.append(
+                        {
+                            "type": "tool_use",
+                            "id": tc.id,
+                            "name": tc.name,
+                            "input": tc.input,
+                        }
+                    )
+                messages.append({"role": "assistant", "content": assistant_content})
+
+                # Execute each tool call and collect results
+                tool_results: List[Dict[str, Any]] = []
+                for tc in response.tool_calls:
+                    if debug:
+                        debug_events.append(
+                            f"[{self.name}] Tool call: {tc.name}({json.dumps(tc.input)})"
+                        )
+
+                    result_text = await self._execute_tool(
+                        tc.name, tc.input, depth, debug, debug_events, run_uuid
+                    )
+
+                    if debug:
+                        truncated = result_text[:MAX_DEBUG_RESULT_LENGTH]
+                        if len(result_text) > MAX_DEBUG_RESULT_LENGTH:
+                            truncated += "..."
+                        debug_events.append(f"[{self.name}] Tool result: {truncated}")
+
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tc.id,
+                            "content": result_text,
+                        }
+                    )
+                messages.append({"role": "user", "content": tool_results})
+
+        except Exception:
+            if self._event_logger is not None and run_uuid is not None:
+                import traceback
+                self._event_logger.finish_agent_run(
+                    run_uuid, "", "error", error=traceback.format_exc()
                 )
-            messages.append({"role": "user", "content": tool_results})
+            raise
 
     async def _execute_tool(
         self,
@@ -229,6 +278,7 @@ class Agent:
         depth: int,
         debug: bool = False,
         debug_events: List[str] | None = None,
+        run_uuid: Optional[str] = None,
     ) -> str:
         """Execute a tool call — either MCP tool or agent-as-tool delegation."""
         if self._tool_manager is None:
@@ -241,39 +291,59 @@ class Agent:
                 return f"## Skill: {skill_name}\n{self._skill_contents[skill_name]}"
             return json.dumps({"error": f"Unknown skill: {skill_name}"})
 
-        # Check if this is an agent-as-tool
-        delegated_agent = self._tool_manager.is_agent_tool(tool_name)
-        if delegated_agent is not None:
-            if self._agent_runner is None:
-                return json.dumps({"error": "Agent delegation not available"})
-            agent_message = arguments.get("message", "")
-            if debug and debug_events is not None:
-                debug_events.append(
-                    f"[{self.name}] Delegating to agent '{delegated_agent}' with message: {agent_message}"
-                )
-            result = await self._agent_runner(
-                delegated_agent, agent_message, depth + 1, debug
+        # Start tool invocation log
+        call_uuid: Optional[str] = None
+        if self._event_logger is not None and run_uuid is not None:
+            call_uuid = await self._event_logger.start_tool_call(
+                run_uuid, tool_name, json.dumps(arguments)
             )
-            # Merge debug events from delegated agent
-            if debug and debug_events is not None and isinstance(result, AgentResult):
-                debug_events.extend(result.debug_events)
-                return result.text
-            if isinstance(result, AgentResult):
-                return result.text
-            return result
 
-        # Check if this is a discussion-as-tool
-        if tool_name in self._discussion_names:
-            if self._discussion_runner is None:
-                return json.dumps({"error": "Discussion runner not available"})
-            topic = arguments.get("topic", "")
-            if debug and debug_events is not None:
-                debug_events.append(
-                    f"[{self.name}] Starting discussion '{tool_name}' on topic: {topic}"
-                )
-            return await self._discussion_runner(tool_name, topic)
+        result_text: str
+        try:
+            # Check if this is an agent-as-tool
+            delegated_agent = self._tool_manager.is_agent_tool(tool_name)
+            if delegated_agent is not None:
+                if self._agent_runner is None:
+                    result_text = json.dumps({"error": "Agent delegation not available"})
+                else:
+                    agent_message = arguments.get("message", "")
+                    if debug and debug_events is not None:
+                        debug_events.append(
+                            f"[{self.name}] Delegating to agent '{delegated_agent}' with message: {agent_message}"
+                        )
+                    result = await self._agent_runner(
+                        delegated_agent, agent_message, depth + 1, debug,
+                        "delegation", run_uuid,
+                    )
+                    # Merge debug events from delegated agent
+                    if debug and debug_events is not None and isinstance(result, AgentResult):
+                        debug_events.extend(result.debug_events)
+                    result_text = result.text if isinstance(result, AgentResult) else result
 
-        return await self._tool_manager.call_tool(tool_name, arguments)
+            # Check if this is a discussion-as-tool
+            elif tool_name in self._discussion_names:
+                if self._discussion_runner is None:
+                    result_text = json.dumps({"error": "Discussion runner not available"})
+                else:
+                    topic = arguments.get("topic", "")
+                    if debug and debug_events is not None:
+                        debug_events.append(
+                            f"[{self.name}] Starting discussion '{tool_name}' on topic: {topic}"
+                        )
+                    result_text = await self._discussion_runner(tool_name, topic)
+
+            else:
+                result_text = await self._tool_manager.call_tool(tool_name, arguments)
+
+        except Exception as exc:
+            if self._event_logger is not None and call_uuid is not None:
+                self._event_logger.finish_tool_call(call_uuid, "", "error", error=str(exc))
+            raise
+
+        if self._event_logger is not None and call_uuid is not None:
+            self._event_logger.finish_tool_call(call_uuid, result_text, "success")
+
+        return result_text
 
     async def shutdown(self):
         """Disconnect all tool clients."""

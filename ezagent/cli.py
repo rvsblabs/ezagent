@@ -260,3 +260,83 @@ def discuss(discussion_name: str, topic: tuple[str, ...]):
     from ezagent.daemon import send_discussion
 
     send_discussion(discussion_name, " ".join(topic))
+
+
+@cli.command("logs")
+@click.option("--agent", default=None, help="Filter by agent name.")
+@click.option("--limit", default=20, show_default=True, help="Number of rows to show.")
+@click.option(
+    "--status",
+    default=None,
+    type=click.Choice(["running", "success", "error"]),
+    help="Filter by run status.",
+)
+def logs(agent: str | None, limit: int, status: str | None):
+    """Show recent agent run logs."""
+    import sqlite3
+    import datetime as dt
+
+    project_dir = find_project_dir()
+    if project_dir is None:
+        raise click.ClickException(
+            "No agents.yml found. Run this from inside an ezagent project."
+        )
+
+    db_path = project_dir / ".ezagent" / "events.db"
+    if not db_path.exists():
+        click.echo("No event log found. Run an agent first.")
+        return
+
+    rows = _read_logs(db_path, agent=agent, limit=limit, status=status)
+    if not rows:
+        click.echo("No logs found.")
+        return
+
+    header = f"{'AGENT':<16} {'SOURCE':<12} {'STATUS':<10} {'INPUT':<42} {'DURATION':>10}  STARTED"
+    click.echo(header)
+    click.echo("-" * len(header))
+    for row in rows:
+        agent_name, source, row_status, input_msg, duration_ms, started_at = row
+        input_str = (input_msg or "")
+        input_trunc = input_str[:40] + ("..." if len(input_str) > 40 else "")
+        duration_str = f"{duration_ms}ms" if duration_ms is not None else "running"
+        started_str = (
+            dt.datetime.fromtimestamp(started_at).strftime("%Y-%m-%d %H:%M:%S")
+            if started_at
+            else ""
+        )
+        click.echo(
+            f"{(agent_name or ''):<16} {(source or ''):<12} {(row_status or ''):<10} "
+            f"{input_trunc:<42} {duration_str:>10}  {started_str}"
+        )
+
+
+def _read_logs(
+    db_path: Path,
+    agent: str | None = None,
+    limit: int = 20,
+    status: str | None = None,
+) -> list:
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        query = (
+            "SELECT agent_name, source, status, input_message, duration_ms, started_at "
+            "FROM agent_runs"
+        )
+        conditions = []
+        params: list = []
+        if agent:
+            conditions.append("agent_name = ?")
+            params.append(agent)
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY started_at DESC LIMIT ?"
+        params.append(limit)
+        return conn.execute(query, params).fetchall()
+    finally:
+        conn.close()

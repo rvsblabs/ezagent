@@ -13,8 +13,23 @@ uv run ez assistant "hello"          # Message an agent
 uv run ez --debug assistant "hello"  # Debug mode (prints tool calls to stderr)
 uv run ez stop                       # Stop daemon
 uv run ez status                     # Show agents, schedules, next run times
+uv run ez logs                       # Show recent agent run logs
+uv run ez logs --agent <name>        # Filter logs by agent name
+uv run ez logs --status error        # Filter logs by status (running|success|error)
+uv run ez logs --limit 50            # Change number of rows shown (default 20)
 ez create tool <name>                # Scaffold a new tool in tools/
 ez create skill <name>               # Scaffold a new skill in skills/
+```
+
+## Testing
+```bash
+uv sync --group dev                  # Install dev dependencies (pytest)
+uv run pytest tests/                 # Run all tests
+uv run pytest tests/ -x -q          # Fail-fast, quiet output
+uv run pytest tests/test_event_log.py       # EventLogger unit tests
+uv run pytest tests/test_agent_logging.py   # Agent + EventLogger integration
+uv run pytest tests/test_discussion_logging.py  # Discussion + EventLogger
+uv run pytest tests/test_config_and_cli.py  # Config + CLI logs command
 ```
 
 > **In user projects** (not this repo): run `ez update-docs` after upgrading ezagent to regenerate the project's `CLAUDE.md` from the latest template.
@@ -22,12 +37,13 @@ ez create skill <name>               # Scaffold a new skill in skills/
 ## Source Layout
 ```
 ezagent/
-  cli.py          # Click CLI — init, start, stop, status, run, discuss, tools, create
+  cli.py          # Click CLI — init, start, stop, status, run, discuss, logs, tools, create
   config.py       # Pydantic models: ProjectConfig, AgentConfig, DiscussionConfig, ScheduleEntry
   agent.py        # Agent class — agentic tool-use loop (initialize / run / shutdown)
   daemon.py       # AgentDaemon — Unix socket server + cron scheduler
   scaffold.py     # create_project(), create_tool(), create_skill() + template strings
   discussion.py   # DiscussionRuntime — multi-agent turn-based discussions
+  event_log.py    # EventLogger — SQLite event store (agent runs, tool calls, LLM calls, discussions)
   external.py     # Git-based external tools/skills resolution
   llm/
     base.py       # Abstract LLMProvider + LLMResponse/ToolCall dataclasses
@@ -44,17 +60,30 @@ ezagent/
       filesystem/ # Read/write/list local files
       arxiv/      # ArXiv paper search
       pdf_reader/ # PDF text extraction
+tests/
+  test_event_log.py           # EventLogger unit tests (all 5 tables, lifecycle, isolation)
+  test_agent_logging.py       # Agent + EventLogger integration (mock LLM, delegation)
+  test_discussion_logging.py  # DiscussionRuntime + EventLogger integration
+  test_config_and_cli.py      # ProjectConfig.events_db_path + ez logs CLI command
 ```
 
 ## Core Abstractions
 
 ### Agent (`agent.py`)
 - `Agent.initialize()` — loads skills into system prompt, connects ToolManager to MCP servers
-- `Agent.run(message, depth, debug) -> AgentResult` — agentic loop: LLM → tool calls → results → repeat until no tool calls remain
+- `Agent.run(message, depth, debug, source, parent_run_uuid) -> AgentResult` — agentic loop: LLM → tool calls → results → repeat until no tool calls remain
+- `source` values: `"manual"` (CLI/direct), `"scheduled"` (cron), `"delegation"` (agent-as-tool), `"discussion"` (inside a discussion turn)
 - Skills are loaded lazily via the synthetic `use_skill` tool (keeps context lean)
 - Agent-as-tool: tool name is `agent_<name>` with input schema `{"message": str}`
 - Discussion-as-tool: tool name matches the discussion name, input schema `{"topic": str}`
 - Max recursion depth: 10
+
+### EventLogger (`event_log.py`)
+- `EventLogger.setup(db_path)` — creates schema, called once at daemon startup
+- `start_*` methods await the INSERT (so the row exists before `finish_*` updates it)
+- `finish_*` methods are fire-and-forget (`asyncio.create_task`) — never block the agent loop
+- All writes use a single-threaded `ThreadPoolExecutor` so SQLite access is serialized
+- DB location: `.ezagent/events.db` in the project directory (`config.events_db_path`)
 
 ### ToolManager (`tools/manager.py`)
 - Connects to each tool via FastMCP STDIO transport:
@@ -141,6 +170,21 @@ discussions:
 - PID file: `/tmp/ezagent_<md5-of-project-dir>.pid`
 - Scheduler log: `.ezagent/scheduler.log` in project dir
 - Memory DB: `.ezagent/memory/milvus.db` in project dir
+- Event log DB: `.ezagent/events.db` in project dir (SQLite, 5 tables)
+
+## Event Log Schema
+```
+agent_runs         run_uuid, agent_name, input_message, output_text, status, error_message,
+                   depth, source, parent_run_uuid, started_at, finished_at, duration_ms
+tool_invocations   call_uuid, run_uuid, tool_name, input_json, output_text,
+                   status, error_message, started_at, finished_at, duration_ms
+llm_calls          call_uuid, run_uuid, call_number, output_text, tool_calls_json,
+                   stop_reason, started_at, finished_at, duration_ms
+discussion_runs    discussion_uuid, discussion_name, topic, status, terminal_state,
+                   decision, dissent, rounds_completed, started_at, finished_at, duration_ms
+discussion_turns   discussion_uuid, agent_name, role, content, round_number, created_at
+```
+Inspect directly: `sqlite3 .ezagent/events.db "SELECT agent_name,status,duration_ms FROM agent_runs;"`
 
 ## Common Errors
 | Error | Fix |
