@@ -68,6 +68,9 @@ def _convert_messages(
     messages: List[Dict[str, Any]],
 ) -> List[types.Content]:
     contents: List[types.Content] = []
+    # Track tool_use_id -> function_name mapping for tool results
+    tool_id_to_name: Dict[str, str] = {}
+    
     for msg in messages:
         role = msg["role"]
         # Gemini uses "user" and "model" roles
@@ -87,17 +90,25 @@ def _convert_messages(
                 if block.get("type") == "text":
                     parts.append(types.Part.from_text(text=block["text"]))
                 elif block.get("type") == "tool_use":
+                    tool_name = block["name"]
+                    tool_id = block.get("id", "")
+                    # Remember the mapping for later tool_result blocks
+                    if tool_id:
+                        tool_id_to_name[tool_id] = tool_name
                     parts.append(
                         types.Part.from_function_call(
-                            name=block["name"],
+                            name=tool_name,
                             args=block.get("input", {}),
                         )
                     )
                 elif block.get("type") == "tool_result":
                     result_content = block.get("content", "")
+                    tool_use_id = block.get("tool_use_id", "")
+                    # Look up the original function name from the tool_use_id
+                    function_name = tool_id_to_name.get(tool_use_id, block.get("name", "unknown"))
                     parts.append(
                         types.Part.from_function_response(
-                            name=block.get("name", block.get("tool_use_id", "unknown")),
+                            name=function_name,
                             response={"result": result_content},
                         )
                     )

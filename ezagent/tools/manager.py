@@ -209,6 +209,8 @@ class ToolManager:
         for tool_name, client in self._clients.items():
             if tool_name in self._shared_clients:
                 continue
+            if client is None:
+                continue
             try:
                 await client.__aexit__(None, None, None)
             except Exception:

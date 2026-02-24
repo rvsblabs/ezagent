@@ -318,7 +318,7 @@ class DiscussionRuntime:
             "CONFIDENCE: <low | medium | high>"
         )
 
-        result = await moderator.run(prompt)
+        result = await moderator.run(prompt, source="discussion")
         return DiscussionResult(
             topic=topic,
             discussion_name=self.name,

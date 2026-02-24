@@ -406,6 +406,7 @@ class AgentDaemon:
                 writer.write((json.dumps(response) + "\n").encode())
                 await writer.drain()
                 writer.close()
+                await writer.wait_closed()
                 return
 
             try:
