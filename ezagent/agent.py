@@ -44,6 +44,7 @@ class Agent:
         ] = None,
         discussion_names: Optional[List[str]] = None,
         event_logger: Optional["EventLogger"] = None,
+        shared_tool_clients: Optional[Dict[str, Any]] = None,
     ):
         self.name = name
         self.config = config
@@ -56,6 +57,7 @@ class Agent:
         self._discussion_runner = discussion_runner
         self._discussion_names: List[str] = discussion_names or []
         self._event_logger: Optional["EventLogger"] = event_logger
+        self._shared_tool_clients: Dict[str, Any] = shared_tool_clients or {}
         self._tool_manager: Optional[ToolManager] = None
         self._system_prompt: str = ""
         self._skill_contents: Dict[str, str] = {}
@@ -109,6 +111,7 @@ class Agent:
             non_discussion_tools,
             self.agent_names,
             external_tool_paths=self._external_tool_paths,
+            shared_clients=self._shared_tool_clients,
         )
         await self._tool_manager.connect()
 
