@@ -1,4 +1,8 @@
-"""Tests for discovered bugs in ezagent."""
+"""Systematic tests for ezagent correctness and robustness.
+
+This test suite covers edge cases, error handling, and potential issues
+discovered through systematic code review.
+"""
 
 import asyncio
 import json

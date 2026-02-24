@@ -19,6 +19,9 @@ All commands must use `uv run` from the repo root (e.g. `uv run ez --version`). 
 
 - pytest with `asyncio_mode = "auto"` (via pytest-asyncio). Run: `uv run pytest tests/ -v`
 - Tests go in `tests/` directory at the repo root.
+- Test files:
+  - `test_smoke.py` - Basic import and CLI smoke tests
+  - `test_systematic.py` - Systematic correctness tests covering edge cases, error handling, and robustness
 
 ### Daemon startup caveat
 
@@ -29,3 +32,14 @@ All commands must use `uv run` from the repo root (e.g. `uv run ez --version`). 
 ### Scaffolding test projects
 
 Use `ez init <name>` from any directory to scaffold a test project. The scaffolded project includes `agents.yml`, `tools/`, `skills/`, and Docker files.
+
+### Code Quality Notes
+
+Recent systematic code review identified and fixed several issues:
+
+1. **Async Resource Management**: Ensured proper cleanup of asyncio resources (socket writers, MCP clients)
+2. **Google Provider Compatibility**: Fixed tool result name mapping for Gemini API compatibility
+3. **Event Logging Consistency**: Corrected source parameter tracking for discussion moderator calls
+4. **Defensive Error Handling**: Added None checks in cleanup paths to prevent shutdown failures
+
+All fixes have test coverage in `tests/test_systematic.py`.
