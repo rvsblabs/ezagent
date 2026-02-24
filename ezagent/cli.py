@@ -5,7 +5,16 @@ from pathlib import Path
 import click
 
 from ezagent.config import find_project_dir
-from ezagent.scaffold import PROJECT_CLAUDE_MD, create_project, create_skill, create_tool
+from ezagent.scaffold import (
+    DOCKERFILE,
+    DOCKER_COMPOSE,
+    DOCKERIGNORE,
+    ENV_EXAMPLE,
+    PROJECT_CLAUDE_MD,
+    create_project,
+    create_skill,
+    create_tool,
+)
 
 
 class EzGroup(click.Group):
@@ -60,10 +69,13 @@ def init(app_name: str):
     try:
         path = create_project(app_name)
         click.echo(f"Created project at {path}")
-        click.echo(f"  {app_name}/tools/     — add FastMCP tool servers here")
-        click.echo(f"  {app_name}/skills/    — add skill .md files here")
-        click.echo(f"  {app_name}/agents.yml — configure your agents")
-        click.echo(f"  {app_name}/CLAUDE.md  — Claude Code project guide (run 'ez update-docs' after upgrading ezagent)")
+        click.echo(f"  {app_name}/agents.yml          — configure your agents")
+        click.echo(f"  {app_name}/tools/              — add FastMCP tool servers here")
+        click.echo(f"  {app_name}/skills/             — add skill .md files here")
+        click.echo(f"  {app_name}/CLAUDE.md           — Claude Code project guide")
+        click.echo(f"  {app_name}/Dockerfile          — container image definition")
+        click.echo(f"  {app_name}/docker-compose.yml  — containerized dev (daemon + api)")
+        click.echo(f"  {app_name}/.env.example        — copy to .env and fill in API keys")
     except FileExistsError as e:
         raise click.ClickException(str(e))
 
@@ -113,12 +125,14 @@ def create_skill_cmd(name: str):
 
 @cli.command("update-docs")
 def update_docs():
-    """Regenerate CLAUDE.md from the current ezagent version's template."""
+    """Regenerate CLAUDE.md and add any missing Docker scaffold files."""
     project_dir = find_project_dir()
     if project_dir is None:
         raise click.ClickException(
             "No agents.yml found. Run this from inside an ezagent project."
         )
+
+    # CLAUDE.md — always overwrite (generated template, not user-customised)
     claude_md = project_dir / "CLAUDE.md"
     existed = claude_md.exists()
     claude_md.write_text(PROJECT_CLAUDE_MD)
@@ -126,6 +140,21 @@ def update_docs():
         click.echo(f"Updated {claude_md} with the latest ezagent template.")
     else:
         click.echo(f"Created {claude_md}")
+
+    # Docker scaffold files — create only if missing (user may have customised them)
+    docker_files = [
+        ("Dockerfile", DOCKERFILE),
+        ("docker-compose.yml", DOCKER_COMPOSE),
+        (".dockerignore", DOCKERIGNORE),
+        (".env.example", ENV_EXAMPLE),
+    ]
+    for filename, template in docker_files:
+        path = project_dir / filename
+        if path.exists():
+            click.echo(f"  {filename} already exists, skipping.")
+        else:
+            path.write_text(template)
+            click.echo(f"  Created {filename}")
 
 
 @cli.command()
