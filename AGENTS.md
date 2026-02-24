@@ -18,10 +18,16 @@ All commands must use `uv run` from the repo root (e.g. `uv run ez --version`). 
 ### Testing
 
 - pytest with `asyncio_mode = "auto"` (via pytest-asyncio). Run: `uv run pytest tests/ -v`
-- Tests go in `tests/` directory at the repo root.
-- Test files:
+- Tests are organized in `tests/` directory at the repo root.
+- Test structure:
   - `test_smoke.py` - Basic import and CLI smoke tests
-  - `test_systematic.py` - Systematic correctness tests covering edge cases, error handling, and robustness
+  - `systematic/` - Organized systematic tests by component:
+    - `test_config.py` - Configuration validation
+    - `test_daemon.py` - Daemon socket handling and scheduler
+    - `test_discussions.py` - Multi-agent discussions
+    - `test_event_log.py` - Event logging and persistence
+    - `test_llm_providers.py` - LLM provider implementations
+    - `test_tools.py` - Tool management and MCP clients
 
 ### Daemon startup caveat
 
@@ -42,4 +48,4 @@ Recent systematic code review identified and fixed several issues:
 3. **Event Logging Consistency**: Corrected source parameter tracking for discussion moderator calls
 4. **Defensive Error Handling**: Added None checks in cleanup paths to prevent shutdown failures
 
-All fixes have test coverage in `tests/test_systematic.py`.
+All fixes have test coverage in `tests/systematic/`.
