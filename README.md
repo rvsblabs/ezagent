@@ -249,7 +249,48 @@ ez stop
 | `ez tools`                   | List available prebuilt and project tools|
 | `ez run <agent> <message>`   | Send a message to an agent              |
 | `ez <agent> <message>`       | Shorthand for `ez run`                  |
+| `ez serve`                   | Start the REST + WebSocket API server (requires `ezagent[serve]`) |
 | `ez update-docs`             | Regenerate CLAUDE.md from the current ezagent template (run after upgrading) |
+
+### HTTP API server (`ez serve`)
+
+`ez serve` starts a local FastAPI server that exposes the daemon and event log over HTTP and WebSocket. It is useful for building web UIs or integrating with external tools.
+
+Install the optional dependencies first:
+
+```bash
+# If using uv tool install
+uv tool install 'ezagent[serve]@git+https://github.com/rvsblabs/ezagent.git'
+
+# If working in the repo
+uv sync --extra serve
+```
+
+Then start the server from inside a project directory (daemon can be running or not):
+
+```bash
+ez serve                  # → http://127.0.0.1:7771
+ez serve --port 8080      # custom port
+```
+
+Key endpoints:
+
+| Endpoint | Description |
+| -------- | ----------- |
+| `GET /v1/status` | Daemon status and agent info |
+| `POST /v1/daemon/start` / `stop` | Start or stop the daemon |
+| `GET /v1/agents` | List configured agents |
+| `POST /v1/agents/{name}/run` | Run an agent, returns `{text, debug_events}` |
+| `WS /v1/agents/{name}/stream` | Stream an agent run over WebSocket |
+| `POST /v1/discussions/{name}/run` | Run a discussion |
+| `WS /v1/discussions/{name}/stream` | Stream a discussion over WebSocket |
+| `GET /v1/logs` | Recent agent run logs (supports `?agent=&status=&limit=&offset=`) |
+| `GET /v1/logs/{run_uuid}` | Full run detail with tool invocations and LLM calls |
+| `GET /v1/config` / `PUT /v1/config` | Read or update `agents.yml` |
+| `GET /v1/tools` | List prebuilt and local tools |
+| `POST /v1/tools` / `POST /v1/skills` | Scaffold a new tool or skill |
+
+The server binds to `127.0.0.1` only and allows all CORS origins for local development. No authentication in v1.
 
 ## Providers
 
@@ -333,6 +374,7 @@ Scheduler logs are written to `.ezagent/scheduler.log` inside the project direct
 - **Prebuilt tools**: Built-in tools (e.g. `memory`) that ship with ezagent, run in isolated uv environments with their own dependencies
 - **Agent-as-tool**: Agents listed in another agent's `tools` become callable tools with a `{"message": string}` interface
 - **Scheduler**: Cron-based background task that fires agent runs on a schedule, running alongside the socket server in the same asyncio event loop
+- **HTTP API** (`ez serve`): Optional FastAPI server that bridges the Unix-socket daemon and SQLite event log over HTTP + WebSocket; runs as a separate process from the daemon
 - **LLM**: Provider-agnostic design with an `LLMProvider` ABC; implements Anthropic and Google Gemini
 
 ## TODO
