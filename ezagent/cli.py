@@ -262,6 +262,28 @@ def discuss(discussion_name: str, topic: tuple[str, ...]):
     send_discussion(discussion_name, " ".join(topic))
 
 
+@cli.command("serve")
+@click.option("--port", default=7771, show_default=True, help="Port to listen on.")
+@click.option("--host", default="127.0.0.1", show_default=True, help="Host to bind to.")
+def serve(port: int, host: str):
+    """Start the HTTP + WebSocket API server."""
+    try:
+        import uvicorn
+        from ezagent.server import create_app
+    except ImportError:
+        raise click.ClickException(
+            "Install with: pip install 'ezagent[serve]' or uv sync --extra serve"
+        )
+    from ezagent.config import load_config
+    try:
+        config = load_config()
+    except (FileNotFoundError, ValueError) as e:
+        raise click.ClickException(str(e))
+    app = create_app(config)
+    click.echo(f"ez serve → http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
 @cli.command("logs")
 @click.option("--agent", default=None, help="Filter by agent name.")
 @click.option("--limit", default=20, show_default=True, help="Number of rows to show.")

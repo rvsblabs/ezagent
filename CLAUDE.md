@@ -19,6 +19,9 @@ uv run ez logs --status error        # Filter logs by status (running|success|er
 uv run ez logs --limit 50            # Change number of rows shown (default 20)
 ez create tool <name>                # Scaffold a new tool in tools/
 ez create skill <name>               # Scaffold a new skill in skills/
+uv sync --extra serve                # Install HTTP server deps (fastapi + uvicorn)
+uv run ez serve                      # Start REST + WebSocket API on http://127.0.0.1:7771
+uv run ez serve --port 8080          # Custom port
 ```
 
 ## Testing
@@ -37,7 +40,8 @@ uv run pytest tests/test_config_and_cli.py  # Config + CLI logs command
 ## Source Layout
 ```
 ezagent/
-  cli.py          # Click CLI — init, start, stop, status, run, discuss, logs, tools, create
+  cli.py          # Click CLI — init, start, stop, status, run, discuss, logs, tools, create, serve
+  server.py       # FastAPI app — REST + WebSocket bridge to daemon + SQLite (ez serve)
   config.py       # Pydantic models: ProjectConfig, AgentConfig, DiscussionConfig, ScheduleEntry
   agent.py        # Agent class — agentic tool-use loop (initialize / run / shutdown)
   daemon.py       # AgentDaemon — Unix socket server + cron scheduler
