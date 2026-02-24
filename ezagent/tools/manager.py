@@ -21,6 +21,7 @@ class ToolManager:
         tool_names: List[str],
         agent_names: List[str],
         external_tool_paths: Optional[Dict[str, Path]] = None,
+        shared_clients: Optional[Dict[str, Client]] = None,
     ):
         self._project_dir = project_dir
         self._tool_names = [
@@ -35,6 +36,8 @@ class ToolManager:
         self._tool_routing: Dict[str, tuple[str, str]] = {}
         # Temp files created for auto-injected requirements; cleaned up on disconnect
         self._temp_files: List[str] = []
+        # Pre-connected clients shared across agents (owned by daemon, not us)
+        self._shared_clients: Dict[str, Client] = shared_clients or {}
 
     async def _connect_tool_dir(
         self,
@@ -114,11 +117,22 @@ class ToolManager:
             tool_dir = tools_dir / tool_name
             await self._connect_tool_dir(tool_name, tool_dir, env=base_env)
 
-        # Connect prebuilt tools
+        # Connect prebuilt tools — reuse shared client if available (avoids multiple
+        # processes opening the same embedded database, e.g. Milvus Lite).
         prebuilt_env = {**base_env, "EZAGENT_PROJECT_DIR": str(self._project_dir)}
         for tool_name in self._prebuilt_tool_names:
-            tool_dir = PREBUILT_TOOLS[tool_name]
-            await self._connect_tool_dir(tool_name, tool_dir, env=prebuilt_env)
+            if tool_name in self._shared_clients:
+                client = self._shared_clients[tool_name]
+                self._clients[tool_name] = client
+                tools = await client.list_tools()
+                for tool in tools:
+                    schema = self._mcp_to_anthropic_schema(tool_name, tool)
+                    qualified_name = schema["name"]
+                    self._tool_schemas[qualified_name] = schema
+                    self._tool_routing[qualified_name] = (tool_name, tool.name)
+            else:
+                tool_dir = PREBUILT_TOOLS[tool_name]
+                await self._connect_tool_dir(tool_name, tool_dir, env=prebuilt_env)
 
         # Connect external (git-cloned) tools
         for tool_name, tool_dir in self._external_tool_paths.items():
@@ -191,8 +205,10 @@ class ToolManager:
         return str(result)
 
     async def disconnect(self):
-        """Disconnect all MCP clients."""
-        for client in self._clients.values():
+        """Disconnect all MCP clients (shared clients are skipped — owned by daemon)."""
+        for tool_name, client in self._clients.items():
+            if tool_name in self._shared_clients:
+                continue
             try:
                 await client.__aexit__(None, None, None)
             except Exception:

@@ -19,6 +19,7 @@ from ezagent.discussion import DiscussionResult, DiscussionRuntime
 from ezagent.event_log import EventLogger
 from ezagent.external import resolve_externals
 from ezagent.llm import create_provider
+from ezagent.tools.manager import ToolManager
 
 
 class AgentDaemon:
@@ -32,10 +33,19 @@ class AgentDaemon:
         self._schedule_entries: list[dict] = []
         self._checker_provider: Any = None  # reused for convergence checks
         self._event_logger: EventLogger = EventLogger()
+        # Single shared ToolManager for prebuilt tools — prevents multiple processes
+        # from opening the same embedded databases (e.g. Milvus Lite).
+        self._shared_tm: Optional[ToolManager] = None
 
     async def initialize(self):
         """Create and initialize all agents."""
         self._event_logger.setup(self.config.events_db_path)
+
+        # Pre-connect one shared subprocess per prebuilt tool so all agents
+        # share the same process (fixes Milvus Lite single-process limitation).
+        await self._connect_shared_tools()
+        shared_clients = self._shared_tm._clients if self._shared_tm else {}
+
         agent_names = list(self.config.agents.keys())
         # Cache providers by (provider_name, model) to avoid duplicate clients
         provider_cache: Dict[tuple, Any] = {}
@@ -78,6 +88,7 @@ class AgentDaemon:
                     if t in self.config.discussions
                 ],
                 event_logger=self._event_logger,
+                shared_tool_clients=shared_clients,
             )
             await agent.initialize()
             self.agents[name] = agent
@@ -90,6 +101,34 @@ class AgentDaemon:
         )
 
         self._build_schedule()
+
+    async def _connect_shared_tools(self):
+        """Connect one MCP subprocess per prebuilt tool used by any agent.
+
+        A single shared subprocess is reused across all agents, which avoids
+        multiple processes trying to open the same embedded database (e.g.
+        Milvus Lite only allows one writer process at a time).
+        """
+        from ezagent.tools.builtins import PREBUILT_TOOLS
+
+        needed = sorted({
+            tool
+            for ac in self.config.agents.values()
+            for tool in ac.tools
+            if tool in PREBUILT_TOOLS
+        })
+        if not needed:
+            return
+
+        self._shared_tm = ToolManager(
+            self.config.project_dir,
+            tool_names=needed,
+            agent_names=[],
+        )
+        await self._shared_tm.connect()
+        logging.info(
+            "Connected shared tool subprocesses: %s", ", ".join(needed)
+        )
 
     def _build_schedule(self):
         """Build the list of scheduled entries from agent and discussion configs."""
@@ -409,6 +448,10 @@ class AgentDaemon:
             self._server.close()
         for agent in self.agents.values():
             await agent.shutdown()
+
+        # Disconnect shared tool subprocesses after all agents have shut down.
+        if self._shared_tm is not None:
+            await self._shared_tm.disconnect()
 
         # Cleanup files
         for path in [self.config.socket_path, self.config.pid_path]:
