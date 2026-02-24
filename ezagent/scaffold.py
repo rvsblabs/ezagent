@@ -1,5 +1,78 @@
 from pathlib import Path
 
+DOCKERFILE = """\
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+WORKDIR /project
+
+# uv is provided by the base image — required by the daemon to run tools
+# with isolated dependencies (UvStdioTransport)
+RUN pip install "ezagent[serve]"
+
+# Bake project files into the image for production builds.
+# In development, docker-compose overrides this with a volume mount.
+COPY . .
+
+CMD ["ez", "start"]
+"""
+
+DOCKER_COMPOSE = """\
+# Two-service setup: daemon and api share a Unix socket via ezagent-tmp.
+#
+# Usage:
+#   cp .env.example .env          # fill in your API keys
+#   docker compose up --build     # first run
+#   docker compose up             # subsequent runs
+#
+# API is available at http://localhost:7771
+#   POST /v1/agents/{name}/run    — send a message
+#   GET  /v1/logs                 — view run history
+#   WS   /v1/agents/{name}/stream — streaming responses
+
+services:
+  daemon:
+    build: .
+    command: ez start
+    volumes:
+      - .:/project          # live reload: edit agents.yml/tools/skills without rebuild
+      - ezagent-tmp:/tmp    # share Unix socket with api service
+    env_file: .env
+    restart: unless-stopped
+
+  api:
+    build: .
+    command: ez serve --host 0.0.0.0 --port 7771
+    ports:
+      - "7771:7771"
+    volumes:
+      - .:/project
+      - ezagent-tmp:/tmp    # same socket as daemon
+    env_file: .env
+    depends_on:
+      - daemon
+    restart: unless-stopped
+
+volumes:
+  ezagent-tmp:
+"""
+
+DOCKERIGNORE = """\
+.env
+.ezagent/
+__pycache__/
+*.pyc
+.git/
+"""
+
+ENV_EXAMPLE = """\
+# Copy this file to .env and fill in your API keys.
+# Never commit .env to version control.
+
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_API_KEY=                   # only needed for provider: google
+BRAVE_SEARCH_API_KEY=             # only needed for the web_search prebuilt tool
+"""
+
 EXAMPLE_AGENTS_YML = """\
 # ezagent configuration
 # Define your agents, their tools, and skills here.
@@ -195,6 +268,34 @@ export GOOGLE_API_KEY=...             # for provider: google
 export BRAVE_SEARCH_API_KEY=...       # only if using the web_search prebuilt tool
 ```
 
+## Docker (containerized deployment)
+
+A `Dockerfile` and `docker-compose.yml` are included. Two services share a Unix socket:
+- **daemon** — runs `ez start` (the agent daemon)
+- **api** — runs `ez serve` (HTTP + WebSocket API on port 7771)
+
+```bash
+cp .env.example .env          # fill in your API keys
+docker compose up --build     # first run
+docker compose up             # subsequent runs
+```
+
+Interact via HTTP (no CLI needed from outside the container):
+```bash
+curl -s -X POST http://localhost:7771/v1/agents/assistant/run \
+  -H "Content-Type: application/json" \
+  -d '{"message": "hello"}'
+```
+
+CLI still works by exec-ing into the daemon container:
+```bash
+docker compose exec daemon ez status
+docker compose exec daemon ez logs
+```
+
+Changes to `agents.yml`, `tools/`, and `skills/` are reflected immediately via volume
+mount — no rebuild needed. Rebuild only when upgrading ezagent itself.
+
 ## Troubleshooting
 | Error | Fix |
 |-------|-----|
@@ -259,5 +360,11 @@ def create_project(app_name: str) -> Path:
 
     # Create CLAUDE.md so Claude Code understands this is an ezagent project
     (base / "CLAUDE.md").write_text(PROJECT_CLAUDE_MD)
+
+    # Create Docker scaffolding for containerized deployment
+    (base / "Dockerfile").write_text(DOCKERFILE)
+    (base / "docker-compose.yml").write_text(DOCKER_COMPOSE)
+    (base / ".dockerignore").write_text(DOCKERIGNORE)
+    (base / ".env.example").write_text(ENV_EXAMPLE)
 
     return base

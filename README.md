@@ -43,9 +43,13 @@ This creates:
 
 ```text
 myproject/
-  tools/        # FastMCP tool servers
-  skills/       # Skill markdown files
-  agents.yml    # Agent configuration
+  agents.yml          # Agent configuration
+  tools/              # FastMCP tool servers
+  skills/             # Skill markdown files
+  Dockerfile          # Container image definition
+  docker-compose.yml  # Containerized dev (daemon + api services)
+  .env.example        # Copy to .env and fill in API keys
+  CLAUDE.md           # Claude Code project guide
 ```
 
 ### 2. Configure agents
@@ -250,7 +254,7 @@ ez stop
 | `ez run <agent> <message>`   | Send a message to an agent              |
 | `ez <agent> <message>`       | Shorthand for `ez run`                  |
 | `ez serve`                   | Start the REST + WebSocket API server (requires `ezagent[serve]`) |
-| `ez update-docs`             | Regenerate CLAUDE.md from the current ezagent template (run after upgrading) |
+| `ez update-docs`             | Regenerate CLAUDE.md and add missing Docker scaffold files (run after upgrading) |
 
 ### HTTP API server (`ez serve`)
 
@@ -291,6 +295,46 @@ Key endpoints:
 | `POST /v1/tools` / `POST /v1/skills` | Scaffold a new tool or skill |
 
 The server binds to `127.0.0.1` only and allows all CORS origins for local development. No authentication in v1.
+
+## Docker
+
+Every project scaffolded by `ez init` includes a `Dockerfile` and `docker-compose.yml`. Two services share a Unix socket so the daemon and API server can communicate:
+
+- **daemon** — runs `ez start` (the agent loop and scheduler)
+- **api** — runs `ez serve` on port 7771 (HTTP + WebSocket bridge)
+
+```bash
+cp .env.example .env          # fill in ANTHROPIC_API_KEY (and others as needed)
+docker compose up --build     # first run — builds the image
+docker compose up             # subsequent runs
+```
+
+Changes to `agents.yml`, `tools/`, and `skills/` are reflected immediately via volume mount — no rebuild needed. Rebuild only when upgrading ezagent itself.
+
+Interact via HTTP from the host:
+
+```bash
+curl -s -X POST http://localhost:7771/v1/agents/assistant/run \
+  -H "Content-Type: application/json" \
+  -d '{"message": "hello"}'
+```
+
+The CLI still works by exec-ing into the daemon container:
+
+```bash
+docker compose exec daemon ez status
+docker compose exec daemon ez logs
+```
+
+### Existing projects
+
+If your project was created before Docker scaffolding was added, run:
+
+```bash
+ez update-docs
+```
+
+This adds the missing `Dockerfile`, `docker-compose.yml`, `.dockerignore`, and `.env.example` without touching any files you have already customised.
 
 ## Providers
 
