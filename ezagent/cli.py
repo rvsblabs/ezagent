@@ -267,6 +267,17 @@ def status():
                 msg = sched.get("message", "")
                 click.echo(f"    schedule: {cron:<20} next: {next_run:<26} \"{msg}\"")
 
+    orchestrations = info.get("orchestrations", {})
+    if orchestrations:
+        click.echo("\nOrchestrations:")
+        for name, details in orchestrations.items():
+            pattern = details.get("pattern", "plan_and_delegate")
+            planner = details.get("planner", "")
+            workers = ", ".join(details.get("workers", [])) or "\u2014"
+            click.echo(
+                f"  {name:<16} pattern: {pattern:<20} planner: {planner:<12} workers: {workers}"
+            )
+
 
 @cli.command()
 @click.argument("agent_name")
@@ -289,6 +300,16 @@ def discuss(discussion_name: str, topic: tuple[str, ...]):
     from ezagent.daemon import send_discussion
 
     send_discussion(discussion_name, " ".join(topic))
+
+
+@cli.command("orchestrate")
+@click.argument("orchestration_name")
+@click.argument("message", nargs=-1, required=True)
+def orchestrate(orchestration_name: str, message: tuple[str, ...]):
+    """Run an orchestration (plan-and-delegate). Usage: ez orchestrate <name> <message>"""
+    from ezagent.daemon import send_orchestration
+
+    send_orchestration(orchestration_name, " ".join(message))
 
 
 @cli.command("serve")
@@ -315,6 +336,7 @@ def serve(port: int, host: str):
 
 @cli.command("logs")
 @click.option("--agent", default=None, help="Filter by agent name.")
+@click.option("--orchestration", default=None, help="Filter by orchestration name.")
 @click.option("--limit", default=20, show_default=True, help="Number of rows to show.")
 @click.option(
     "--status",
@@ -322,7 +344,7 @@ def serve(port: int, host: str):
     type=click.Choice(["running", "success", "error"]),
     help="Filter by run status.",
 )
-def logs(agent: str | None, limit: int, status: str | None):
+def logs(agent: str | None, orchestration: str | None, limit: int, status: str | None):
     """Show recent agent run logs."""
     import sqlite3
     import datetime as dt
@@ -338,28 +360,50 @@ def logs(agent: str | None, limit: int, status: str | None):
         click.echo("No event log found. Run an agent first.")
         return
 
-    rows = _read_logs(db_path, agent=agent, limit=limit, status=status)
-    if not rows:
-        click.echo("No logs found.")
-        return
-
-    header = f"{'AGENT':<16} {'SOURCE':<12} {'STATUS':<10} {'INPUT':<42} {'DURATION':>10}  STARTED"
-    click.echo(header)
-    click.echo("-" * len(header))
-    for row in rows:
-        agent_name, source, row_status, input_msg, duration_ms, started_at = row
-        input_str = (input_msg or "")
-        input_trunc = input_str[:40] + ("..." if len(input_str) > 40 else "")
-        duration_str = f"{duration_ms}ms" if duration_ms is not None else "running"
-        started_str = (
-            dt.datetime.fromtimestamp(started_at).strftime("%Y-%m-%d %H:%M:%S")
-            if started_at
-            else ""
-        )
-        click.echo(
-            f"{(agent_name or ''):<16} {(source or ''):<12} {(row_status or ''):<10} "
-            f"{input_trunc:<42} {duration_str:>10}  {started_str}"
-        )
+    if orchestration:
+        rows = _read_orchestration_logs(db_path, orchestration=orchestration, limit=limit)
+        if not rows:
+            click.echo("No orchestration logs found.")
+            return
+        header = f"{'ORCHESTRATION':<18} {'STATUS':<10} {'INPUT':<42} {'DURATION':>10}  STARTED"
+        click.echo(header)
+        click.echo("-" * len(header))
+        for row in rows:
+            orch_name, row_status, input_msg, duration_ms, started_at = row
+            input_str = (input_msg or "")
+            input_trunc = input_str[:40] + ("..." if len(input_str) > 40 else "")
+            duration_str = f"{duration_ms}ms" if duration_ms is not None else "running"
+            started_str = (
+                dt.datetime.fromtimestamp(started_at).strftime("%Y-%m-%d %H:%M:%S")
+                if started_at
+                else ""
+            )
+            click.echo(
+                f"{(orch_name or ''):<18} {(row_status or ''):<10} "
+                f"{input_trunc:<42} {duration_str:>10}  {started_str}"
+            )
+    else:
+        rows = _read_logs(db_path, agent=agent, limit=limit, status=status)
+        if not rows:
+            click.echo("No logs found.")
+            return
+        header = f"{'AGENT':<16} {'SOURCE':<12} {'STATUS':<10} {'INPUT':<42} {'DURATION':>10}  STARTED"
+        click.echo(header)
+        click.echo("-" * len(header))
+        for row in rows:
+            agent_name, source, row_status, input_msg, duration_ms, started_at = row
+            input_str = (input_msg or "")
+            input_trunc = input_str[:40] + ("..." if len(input_str) > 40 else "")
+            duration_str = f"{duration_ms}ms" if duration_ms is not None else "running"
+            started_str = (
+                dt.datetime.fromtimestamp(started_at).strftime("%Y-%m-%d %H:%M:%S")
+                if started_at
+                else ""
+            )
+            click.echo(
+                f"{(agent_name or ''):<16} {(source or ''):<12} {(row_status or ''):<10} "
+                f"{input_trunc:<42} {duration_str:>10}  {started_str}"
+            )
 
 
 def _read_logs(
@@ -386,6 +430,30 @@ def _read_logs(
             params.append(status)
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY started_at DESC LIMIT ?"
+        params.append(limit)
+        return conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
+
+
+def _read_orchestration_logs(
+    db_path: Path,
+    orchestration: str | None = None,
+    limit: int = 20,
+) -> list:
+    import sqlite3
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        query = (
+            "SELECT orchestration_name, status, message, duration_ms, started_at "
+            "FROM orchestration_runs"
+        )
+        params: list = []
+        if orchestration:
+            query += " WHERE orchestration_name = ?"
+            params.append(orchestration)
         query += " ORDER BY started_at DESC LIMIT ?"
         params.append(limit)
         return conn.execute(query, params).fetchall()

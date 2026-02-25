@@ -19,6 +19,7 @@ from ezagent.discussion import DiscussionResult, DiscussionRuntime
 from ezagent.event_log import EventLogger
 from ezagent.external import resolve_externals
 from ezagent.llm import create_provider
+from ezagent.orchestration import PlanAndDelegateRuntime
 from ezagent.tools.manager import ToolManager
 
 
@@ -33,6 +34,7 @@ class AgentDaemon:
         self._schedule_entries: list[dict] = []
         self._checker_provider: Any = None  # reused for convergence checks
         self._event_logger: EventLogger = EventLogger()
+        self._orchestration_runtimes: Dict[str, Any] = {}
         # Single shared ToolManager for prebuilt tools — prevents multiple processes
         # from opening the same embedded databases (e.g. Milvus Lite).
         self._shared_tm: Optional[ToolManager] = None
@@ -87,11 +89,32 @@ class AgentDaemon:
                     t for t in agent_config.tools
                     if t in self.config.discussions
                 ],
+                orchestration_runner=self._delegate_to_orchestration,
+                orchestration_names=[
+                    t for t in agent_config.tools
+                    if t in self.config.orchestrations
+                ],
                 event_logger=self._event_logger,
                 shared_tool_clients=shared_clients,
             )
             await agent.initialize()
             self.agents[name] = agent
+
+        # Create orchestration runtimes (after agents exist)
+        for orch_name, orch_config in self.config.orchestrations.items():
+            if orch_config.pattern == "plan_and_delegate":
+                provider = provider_cache.get(
+                    (self.config.provider, self.config.model),
+                    create_provider(self.config.provider, self.config.model),
+                )
+                runtime = PlanAndDelegateRuntime(
+                    name=orch_name,
+                    config=orch_config,
+                    agents=self.agents,
+                    planner_provider=provider,
+                    event_logger=self._event_logger,
+                )
+                self._orchestration_runtimes[orch_name] = runtime
 
         # Create the convergence checker using the project's default provider.
         # Reuse from cache if already created, otherwise create fresh.
@@ -246,12 +269,34 @@ class AgentDaemon:
             source=source, parent_run_uuid=parent_run_uuid,
         )
 
+    async def _delegate_to_orchestration(
+        self, orchestration_name: str, message: str
+    ) -> str:
+        """Callback for orchestration-as-tool: returns the result text."""
+        result = await self._run_orchestration(orchestration_name, message)
+        if "error" in result:
+            return json.dumps(result)
+        return result.get("text", str(result))
+
     async def _delegate_to_discussion(
         self, discussion_name: str, topic: str
     ) -> str:
         """Callback for discussion-as-tool: returns the decision text."""
         result = await self._run_discussion(discussion_name, topic)
         return result.get("decision", "Discussion produced no decision.")
+
+    async def _run_orchestration(self, orchestration_name: str, message: str) -> dict:
+        """Run a named orchestration and return a serialisable result dict."""
+        runtime = self._orchestration_runtimes.get(orchestration_name)
+        if runtime is None:
+            return {"error": f"Orchestration '{orchestration_name}' not found"}
+
+        orch_result = await runtime.run(message)
+        return {
+            "text": orch_result.text,
+            "status": orch_result.status,
+            "tasks": orch_result.tasks,
+        }
 
     async def _run_discussion(self, discussion_name: str, topic: str) -> dict:
         """Run a named discussion and return a serialisable result dict."""
@@ -379,7 +424,21 @@ class AgentDaemon:
                         "moderator": dc.moderator,
                         "schedule": schedule_info,
                     }
-                response = {"type": "status", "agents": agents_info, "discussions": discussions_info}
+                orchestrations_info = {}
+                for name, oc in self.config.orchestrations.items():
+                    orchestrations_info[name] = {
+                        "pattern": oc.pattern,
+                        "planner": oc.planner,
+                        "workers": oc.workers,
+                        "aggregator": oc.aggregator,
+                        "parallel": oc.parallel,
+                    }
+                response = {
+                    "type": "status",
+                    "agents": agents_info,
+                    "discussions": discussions_info,
+                    "orchestrations": orchestrations_info,
+                }
                 writer.write((json.dumps(response) + "\n").encode())
                 await writer.drain()
                 writer.close()
@@ -391,6 +450,16 @@ class AgentDaemon:
                 topic = request.get("topic", "")
                 result = await self._run_discussion(discussion_name, topic)
                 writer.write((json.dumps({"type": "discussion", **result}) + "\n").encode())
+                await writer.drain()
+                writer.close()
+                await writer.wait_closed()
+                return
+
+            if request.get("type") == "run_orchestration":
+                orchestration_name = request.get("orchestration", "")
+                message = request.get("message", "")
+                result = await self._run_orchestration(orchestration_name, message)
+                writer.write((json.dumps({"type": "orchestration", **result}) + "\n").encode())
                 await writer.drain()
                 writer.close()
                 await writer.wait_closed()
@@ -604,6 +673,7 @@ def get_status() -> dict:
         "project_dir": str(config.project_dir),
         "agents": {},
         "discussions": {},
+        "orchestrations": {},
     }
 
     # Build agent info from config (used when daemon isn't running)
@@ -648,10 +718,22 @@ def get_status() -> dict:
             "schedule": schedule_info,
         }
 
+    # Build orchestration info from config
+    config_orchestrations = {}
+    for name, oc in config.orchestrations.items():
+        config_orchestrations[name] = {
+            "pattern": oc.pattern,
+            "planner": oc.planner,
+            "workers": oc.workers,
+            "aggregator": oc.aggregator,
+            "parallel": oc.parallel,
+        }
+
     pid_path = config.pid_path
     if not os.path.exists(pid_path):
         result["agents"] = config_agents
         result["discussions"] = config_discussions
+        result["orchestrations"] = config_orchestrations
         return result
 
     with open(pid_path) as f:
@@ -659,6 +741,8 @@ def get_status() -> dict:
             pid = int(f.read().strip())
         except ValueError:
             result["agents"] = config_agents
+            result["discussions"] = config_discussions
+            result["orchestrations"] = config_orchestrations
             return result
 
     # Check if process is alive
@@ -666,6 +750,8 @@ def get_status() -> dict:
         os.kill(pid, 0)
     except (ProcessLookupError, PermissionError):
         result["agents"] = config_agents
+        result["discussions"] = config_discussions
+        result["orchestrations"] = config_orchestrations
         return result
 
     result["running"] = True
@@ -696,6 +782,7 @@ def get_status() -> dict:
                 if resp.get("type") == "status":
                     result["agents"] = resp.get("agents", {})
                     result["discussions"] = resp.get("discussions", {})
+                    result["orchestrations"] = resp.get("orchestrations", {})
                     return result
         except (ConnectionRefusedError, OSError, json.JSONDecodeError):
             pass
@@ -703,6 +790,7 @@ def get_status() -> dict:
     # Fallback to config info if socket query failed
     result["agents"] = config_agents
     result["discussions"] = config_discussions
+    result["orchestrations"] = config_orchestrations
     return result
 
 
@@ -822,3 +910,55 @@ def send_discussion(discussion_name: str, topic: str):
         click.echo(f"\n{resp.get('decision', '')}")
         if resp.get("dissent"):
             click.echo(f"\nDISSENT: {resp['dissent']}")
+
+
+def send_orchestration(orchestration_name: str, message: str):
+    """Send a run_orchestration request to the daemon and print the result."""
+    try:
+        config = load_config()
+    except (FileNotFoundError, ValueError) as e:
+        raise click.ClickException(str(e))
+
+    sock_path = config.socket_path
+    if not os.path.exists(sock_path):
+        raise click.ClickException(
+            "Daemon is not running. Start it with: ez start"
+        )
+
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        sock.connect(sock_path)
+    except ConnectionRefusedError:
+        raise click.ClickException(
+            "Cannot connect to daemon. Try restarting with: ez stop && ez start"
+        )
+
+    request = json.dumps({
+        "type": "run_orchestration",
+        "orchestration": orchestration_name,
+        "message": message,
+    })
+    sock.sendall(request.encode())
+    sock.shutdown(socket.SHUT_WR)
+
+    buffer = b""
+    while True:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        buffer += chunk
+    sock.close()
+
+    for line in buffer.decode().strip().split("\n"):
+        if not line:
+            continue
+        try:
+            resp = json.loads(line)
+        except json.JSONDecodeError:
+            click.echo(line)
+            continue
+
+        if "error" in resp:
+            raise click.ClickException(resp["error"])
+
+        click.echo(resp.get("text", ""))

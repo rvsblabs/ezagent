@@ -16,7 +16,9 @@ uv run ez status                     # Show agents, schedules, next run times
 uv run ez logs                       # Show recent agent run logs
 uv run ez logs --agent <name>        # Filter logs by agent name
 uv run ez logs --status error        # Filter logs by status (running|success|error)
+uv run ez logs --orchestration <n>  # Filter logs by orchestration name
 uv run ez logs --limit 50            # Change number of rows shown (default 20)
+uv run ez orchestrate <name> "msg"   # Run plan-and-delegate orchestration
 ez create tool <name>                # Scaffold a new tool in tools/
 ez create skill <name>               # Scaffold a new skill in skills/
 uv sync --extra serve                # Install HTTP server deps (fastapi + uvicorn)
@@ -42,7 +44,8 @@ uv run pytest tests/test_config_and_cli.py  # Config + CLI logs command
 ezagent/
   cli.py          # Click CLI — init, start, stop, status, run, discuss, logs, tools, create, serve
   server.py       # FastAPI app — REST + WebSocket bridge to daemon + SQLite (ez serve)
-  config.py       # Pydantic models: ProjectConfig, AgentConfig, DiscussionConfig, ScheduleEntry
+  config.py       # Pydantic models: ProjectConfig, AgentConfig, DiscussionConfig, OrchestrationConfig
+  orchestration.py # PlanAndDelegateRuntime — plan-and-delegate orchestration
   agent.py        # Agent class — agentic tool-use loop (initialize / run / shutdown)
   daemon.py       # AgentDaemon — Unix socket server + cron scheduler
   scaffold.py     # create_project(), create_tool(), create_skill() + template strings
@@ -80,6 +83,7 @@ tests/
 - Skills are loaded lazily via the synthetic `use_skill` tool (keeps context lean)
 - Agent-as-tool: tool name is `agent_<name>` with input schema `{"message": str}`
 - Discussion-as-tool: tool name matches the discussion name, input schema `{"topic": str}`
+- Orchestration-as-tool: tool name matches orchestration name, input schema `{"message": str}`
 - Max recursion depth: 10
 
 ### EventLogger (`event_log.py`)
@@ -105,7 +109,7 @@ class LLMProvider(ABC):
 
 ### Config (`config.py`)
 - `load_config()` — walks up from cwd to find `agents.yml`, validates everything
-- Tools validated: must be a prebuilt name, agent name, discussion name, local `tools/<name>/main.py`, or git ref
+- Tools validated: must be a prebuilt name, agent name, discussion name, orchestration name, local `tools/<name>/main.py`, or git ref
 - Skills validated: must exist as `skills/<name>.md`
 - Circular agent references detected via DFS at load time
 
@@ -157,6 +161,14 @@ discussions:
       - moderator_decides
     max_tokens: 50000
     max_duration: 300        # seconds
+
+orchestrations:
+  <name>:
+    pattern: plan_and_delegate
+    planner: <agent_name>    # Agent that decomposes requests into tasks
+    workers: [agent1, agent2] # Agents that run tasks (in parallel)
+    aggregator: <agent_name> # Agent that synthesizes results
+    parallel: true           # Run workers in parallel (default true)
 ```
 
 ## Prebuilt Tools Reference
@@ -176,7 +188,7 @@ discussions:
 - PID file: `/tmp/ezagent_<md5-of-project-dir>.pid`
 - Scheduler log: `.ezagent/scheduler.log` in project dir
 - Memory DB: `.ezagent/memory/milvus.db` in project dir
-- Event log DB: `.ezagent/events.db` in project dir (SQLite, 5 tables)
+- Event log DB: `.ezagent/events.db` in project dir (SQLite, 6 tables)
 
 ## Event Log Schema
 ```
@@ -189,6 +201,8 @@ llm_calls          call_uuid, run_uuid, call_number, output_text, tool_calls_jso
 discussion_runs    discussion_uuid, discussion_name, topic, status, terminal_state,
                    decision, dissent, rounds_completed, started_at, finished_at, duration_ms
 discussion_turns   discussion_uuid, agent_name, role, content, round_number, created_at
+orchestration_runs orchestration_uuid, orchestration_name, message, status, output_text,
+                   error_message, started_at, finished_at, duration_ms
 ```
 Inspect directly: `sqlite3 .ezagent/events.db "SELECT agent_name,status,duration_ms FROM agent_runs;"`
 

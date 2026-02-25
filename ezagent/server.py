@@ -230,6 +230,55 @@ def create_app(config: ProjectConfig) -> FastAPI:
             return item
         raise HTTPException(status_code=502, detail="No response from daemon")
 
+    # ── Orchestrations ────────────────────────────────────────────────────────
+
+    @app.get("/v1/orchestrations")
+    async def list_orchestrations(request: Request) -> list[dict]:
+        cfg: ProjectConfig = request.app.state.config
+        return [
+            {
+                "name": name,
+                "pattern": oc.pattern,
+                "planner": oc.planner,
+                "workers": oc.workers,
+                "aggregator": oc.aggregator,
+                "parallel": oc.parallel,
+            }
+            for name, oc in cfg.orchestrations.items()
+        ]
+
+    @app.get("/v1/orchestrations/{name}")
+    async def get_orchestration(name: str, request: Request) -> dict:
+        cfg: ProjectConfig = request.app.state.config
+        oc = cfg.orchestrations.get(name)
+        if oc is None:
+            raise HTTPException(status_code=404, detail=f"Orchestration '{name}' not found")
+        return {
+            "name": name,
+            "pattern": oc.pattern,
+            "planner": oc.planner,
+            "workers": oc.workers,
+            "aggregator": oc.aggregator,
+            "parallel": oc.parallel,
+        }
+
+    class OrchestrationRunRequest(BaseModel):
+        message: str
+
+    @app.post("/v1/orchestrations/{name}/run")
+    async def run_orchestration(name: str, body: OrchestrationRunRequest, request: Request) -> dict:
+        cfg: ProjectConfig = request.app.state.config
+        if name not in cfg.orchestrations:
+            raise HTTPException(status_code=404, detail=f"Orchestration '{name}' not found")
+        lines = await _send_socket(
+            cfg, {"type": "run_orchestration", "orchestration": name, "message": body.message}
+        )
+        for item in lines:
+            if "error" in item:
+                raise HTTPException(status_code=500, detail=item["error"])
+            return item
+        raise HTTPException(status_code=502, detail="No response from daemon")
+
     # ── Run Discussion (WebSocket) ─────────────────────────────────────────────
 
     @app.websocket("/v1/discussions/{name}/stream")
@@ -356,6 +405,7 @@ def create_app(config: ProjectConfig) -> FastAPI:
             ProjectConfig(
                 agents=parsed["agents"],
                 discussions=parsed.get("discussions", {}),
+                orchestrations=parsed.get("orchestrations", {}),
                 project_dir=cfg.project_dir,
                 provider=parsed.get("provider", "anthropic"),
                 model=parsed.get("model", ""),

@@ -60,9 +60,39 @@ class DiscussionConfig(BaseModel):
     schedule: List[ScheduleEntry] = []
 
 
+VALID_ORCHESTRATION_PATTERNS = {"plan_and_delegate"}
+
+
+class OrchestrationConfig(BaseModel):
+    pattern: str
+    planner: str
+    workers: List[str] = []
+    aggregator: Optional[str] = None
+    parallel: bool = True
+
+    @field_validator("workers", mode="before")
+    @classmethod
+    def split_workers(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v
+
+    @field_validator("pattern")
+    @classmethod
+    def validate_pattern(cls, v: str) -> str:
+        if v not in VALID_ORCHESTRATION_PATTERNS:
+            raise ValueError(
+                f"Orchestration pattern must be one of {sorted(VALID_ORCHESTRATION_PATTERNS)}, got {v!r}"
+            )
+        return v
+
+
 class ProjectConfig(BaseModel):
     agents: Dict[str, AgentConfig]
     discussions: Dict[str, DiscussionConfig] = {}
+    orchestrations: Dict[str, OrchestrationConfig] = {}
     project_dir: Path
     provider: str = "anthropic"
     model: str = ""
@@ -73,6 +103,7 @@ class ProjectConfig(BaseModel):
     def validate_project(self):
         agent_names = set(self.agents.keys())
         discussion_names = set(self.discussions.keys())
+        orchestration_names = set(self.orchestrations.keys())
         tools_dir = self.project_dir / "tools"
         skills_dir = self.project_dir / "skills"
 
@@ -88,7 +119,7 @@ class ProjectConfig(BaseModel):
                     )
 
             # Validate tools: each must be a tool dir, agent name, discussion name,
-            # prebuilt, or git ref
+            # orchestration name, prebuilt, or git ref
             for tool in agent.tools:
                 if is_git_ref(tool):
                     continue
@@ -98,11 +129,13 @@ class ProjectConfig(BaseModel):
                     continue
                 if tool in discussion_names:
                     continue
+                if tool in orchestration_names:
+                    continue
                 tool_main = tools_dir / tool / "main.py"
                 if not tool_main.is_file():
                     raise ValueError(
                         f"Agent '{name}': tool '{tool}' is neither an agent, "
-                        f"a discussion, nor a tool directory with main.py at {tool_main}"
+                        f"a discussion, an orchestration, nor a tool directory with main.py at {tool_main}"
                     )
 
             # Check for self-reference
@@ -133,6 +166,22 @@ class ProjectConfig(BaseModel):
             if disc.moderator is not None and disc.moderator not in agent_names:
                 raise ValueError(
                     f"Discussion '{disc_name}': moderator '{disc.moderator}' is not defined"
+                )
+
+        # Validate orchestration configs
+        for orch_name, orch in self.orchestrations.items():
+            if orch.planner not in agent_names:
+                raise ValueError(
+                    f"Orchestration '{orch_name}': planner '{orch.planner}' is not defined"
+                )
+            for worker in orch.workers:
+                if worker not in agent_names:
+                    raise ValueError(
+                        f"Orchestration '{orch_name}': worker '{worker}' is not defined"
+                    )
+            if orch.aggregator is not None and orch.aggregator not in agent_names:
+                raise ValueError(
+                    f"Orchestration '{orch_name}': aggregator '{orch.aggregator}' is not defined"
                 )
 
         # Check for circular agent references (simple DFS)
@@ -207,6 +256,7 @@ def load_config(project_dir: Optional[Path] = None) -> ProjectConfig:
     return ProjectConfig(
         agents=raw["agents"],
         discussions=raw.get("discussions", {}),
+        orchestrations=raw.get("orchestrations", {}),
         project_dir=project_dir,
         provider=raw.get("provider", "anthropic"),
         model=raw.get("model", ""),

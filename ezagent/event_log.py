@@ -84,6 +84,18 @@ def _create_tables(conn: sqlite3.Connection) -> None:
             round_number    INTEGER,
             created_at      REAL
         );
+
+        CREATE TABLE IF NOT EXISTS orchestration_runs (
+            orchestration_uuid TEXT PRIMARY KEY,
+            orchestration_name TEXT,
+            message          TEXT,
+            status           TEXT DEFAULT 'running',
+            output_text      TEXT,
+            error_message    TEXT,
+            started_at       REAL,
+            finished_at      REAL,
+            duration_ms      INTEGER
+        );
     """)
     conn.commit()
 
@@ -259,6 +271,52 @@ class EventLogger:
                        duration_ms=CAST((? - started_at) * 1000 AS INTEGER)
                    WHERE call_uuid=?""",
                 (output_text, tool_calls_json, stop_reason, finished_at, finished_at, call_uuid),
+            )
+            conn.commit()
+
+        self._fire(_write)
+
+    # ------------------------------------------------------------------ #
+    # Orchestration runs
+    # ------------------------------------------------------------------ #
+
+    async def start_orchestration_run(
+        self, orchestration_name: str, message: str
+    ) -> str:
+        orchestration_uuid = _new_uuid()
+        started_at = _now()
+
+        def _write():
+            conn = self._conn_required()
+            conn.execute(
+                """INSERT INTO orchestration_runs
+                   (orchestration_uuid, orchestration_name, message, status, started_at)
+                   VALUES (?, ?, ?, 'running', ?)""",
+                (orchestration_uuid, orchestration_name, message, started_at),
+            )
+            conn.commit()
+
+        await self._await_sync(_write)
+        return orchestration_uuid
+
+    def finish_orchestration_run(
+        self,
+        orchestration_uuid: str,
+        output_text: str = "",
+        status: str = "success",
+        error: Optional[str] = None,
+    ) -> None:
+        finished_at = _now()
+
+        def _write():
+            conn = self._conn_required()
+            conn.execute(
+                """UPDATE orchestration_runs
+                   SET output_text=?, status=?, error_message=?,
+                       finished_at=?,
+                       duration_ms=CAST((? - started_at) * 1000 AS INTEGER)
+                   WHERE orchestration_uuid=?""",
+                (output_text, status, error, finished_at, finished_at, orchestration_uuid),
             )
             conn.commit()
 

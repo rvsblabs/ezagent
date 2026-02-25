@@ -28,8 +28,7 @@ Thumbs.db
 # Testing
 testproject/
 test*
-
-# Keep tests/ directory (contains pytest tests)
 !tests/
+!tests/test_*.py
 
 portfolio_manager/

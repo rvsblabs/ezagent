@@ -43,6 +43,10 @@ class Agent:
             Callable[[str, str], Coroutine[Any, Any, str]]
         ] = None,
         discussion_names: Optional[List[str]] = None,
+        orchestration_runner: Optional[
+            Callable[[str, str], Coroutine[Any, Any, str]]
+        ] = None,
+        orchestration_names: Optional[List[str]] = None,
         event_logger: Optional["EventLogger"] = None,
         shared_tool_clients: Optional[Dict[str, Any]] = None,
     ):
@@ -56,6 +60,8 @@ class Agent:
         self._external_skill_paths = external_skill_paths or {}
         self._discussion_runner = discussion_runner
         self._discussion_names: List[str] = discussion_names or []
+        self._orchestration_runner = orchestration_runner
+        self._orchestration_names: List[str] = orchestration_names or []
         self._event_logger: Optional["EventLogger"] = event_logger
         self._shared_tool_clients: Dict[str, Any] = shared_tool_clients or {}
         self._tool_manager: Optional[ToolManager] = None
@@ -103,12 +109,13 @@ class Agent:
         self._system_prompt = "\n\n".join(parts)
 
         # Connect tool manager (pass only local tool names, externals handled separately).
-        # Discussion names are handled separately by the discussion_runner callback,
-        # so exclude them here to avoid ToolManager trying to start an MCP server for them.
-        non_discussion_tools = [t for t in self.config.tools if t not in self._discussion_names]
+        # Discussion and orchestration names are handled by their runners,
+        # so exclude them to avoid ToolManager trying to start MCP servers for them.
+        handled_by_runner = self._discussion_names + self._orchestration_names
+        non_runner_tools = [t for t in self.config.tools if t not in handled_by_runner]
         self._tool_manager = ToolManager(
             self.project_dir,
-            non_discussion_tools,
+            non_runner_tools,
             self.agent_names,
             external_tool_paths=self._external_tool_paths,
             shared_clients=self._shared_tool_clients,
@@ -181,6 +188,25 @@ class Agent:
                             }
                         },
                         "required": ["topic"],
+                    },
+                }
+            )
+        for orch_name in self._orchestration_names:
+            tools.append(
+                {
+                    "name": orch_name,
+                    "description": (
+                        f"Run the '{orch_name}' orchestration (plan-and-delegate) and return the result."
+                    ),
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "message": {
+                                "type": "string",
+                                "description": "The user request to process through the orchestration",
+                            }
+                        },
+                        "required": ["message"],
                     },
                 }
             )
@@ -334,6 +360,18 @@ class Agent:
                             f"[{self.name}] Starting discussion '{tool_name}' on topic: {topic}"
                         )
                     result_text = await self._discussion_runner(tool_name, topic)
+
+            # Check if this is an orchestration-as-tool
+            elif tool_name in self._orchestration_names:
+                if self._orchestration_runner is None:
+                    result_text = json.dumps({"error": "Orchestration runner not available"})
+                else:
+                    orch_message = arguments.get("message", "")
+                    if debug and debug_events is not None:
+                        debug_events.append(
+                            f"[{self.name}] Starting orchestration '{tool_name}' with message: {orch_message}"
+                        )
+                    result_text = await self._orchestration_runner(tool_name, orch_message)
 
             else:
                 result_text = await self._tool_manager.call_tool(tool_name, arguments)

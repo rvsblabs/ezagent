@@ -17,6 +17,7 @@ def test_package_imports():
         "ezagent.event_log",
         "ezagent.scaffold",
         "ezagent.discussion",
+        "ezagent.orchestration",
         "ezagent.llm",
         "ezagent.tools.manager",
     ):

@@ -237,6 +237,14 @@ discussions:
     moderator: agent3      # optional
     on_deadlock:
       - moderator_decides  # "moderator_decides" | "human_approval" | "record_and_move_on"
+
+orchestrations:
+  <name>:
+    pattern: plan_and_delegate
+    planner: <agent_name>
+    workers: [agent1, agent2]
+    aggregator: <agent_name>
+    parallel: true
 ```
 
 ## Prebuilt Tools (no files needed — just add the name to tools in agents.yml)
