@@ -95,6 +95,8 @@ agents:
 """
 
 EXAMPLE_TOOL = """\
+\"\"\"Greeter tool - Greets users by name.\"\"\"
+
 from fastmcp import FastMCP
 
 mcp = FastMCP("greeter")
@@ -118,6 +120,8 @@ Keep your responses concise and helpful.
 
 
 TOOL_TEMPLATE = """\
+\"\"\"{name} tool - A sample tool. Customize this docstring to describe what the tool does.\"\"\"
+
 from fastmcp import FastMCP
 
 mcp = FastMCP("{name}")

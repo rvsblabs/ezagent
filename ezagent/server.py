@@ -385,12 +385,23 @@ def create_app(config: ProjectConfig) -> FastAPI:
                     pass
             prebuilt.append({"name": name, "description": desc})
         tools_dir = cfg.project_dir / "tools"
-        local: list[str] = []
+        local: list[dict] = []
         if tools_dir.is_dir():
-            local = sorted(
-                d.name for d in tools_dir.iterdir()
+            dirs = sorted(
+                d for d in tools_dir.iterdir()
                 if d.is_dir() and (d / "main.py").is_file()
             )
+            for d in dirs:
+                main_py = d / "main.py"
+                desc = ""
+                if main_py.is_file():
+                    try:
+                        tree = ast.parse(main_py.read_text())
+                        doc = ast.get_docstring(tree) or ""
+                        desc = doc.split("\n")[0]
+                    except Exception:
+                        pass
+                local.append({"name": d.name, "description": desc})
         return {"prebuilt": prebuilt, "local": local}
 
     class CreateToolRequest(BaseModel):

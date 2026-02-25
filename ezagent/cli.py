@@ -160,6 +160,8 @@ def update_docs():
 @cli.command()
 def tools():
     """List available tools (prebuilt and project-local)."""
+    import ast
+
     from ezagent.tools.builtins import PREBUILT_TOOLS
 
     click.echo("Prebuilt tools (available to any project):")
@@ -168,8 +170,6 @@ def tools():
         main_py = path / "main.py"
         desc = ""
         if main_py.is_file():
-            import ast
-
             try:
                 tree = ast.parse(main_py.read_text())
                 desc = ast.get_docstring(tree) or ""
@@ -183,14 +183,23 @@ def tools():
     if project_dir is not None:
         tools_dir = project_dir / "tools"
         if tools_dir.is_dir():
-            local_tools = sorted(
-                d.name for d in tools_dir.iterdir()
+            dirs = sorted(
+                d for d in tools_dir.iterdir()
                 if d.is_dir() and (d / "main.py").is_file()
             )
-            if local_tools:
+            if dirs:
                 click.echo(f"\nProject tools ({project_dir.name}/tools/):")
-                for name in local_tools:
-                    click.echo(f"  {name}")
+                for d in dirs:
+                    desc = ""
+                    main_py = d / "main.py"
+                    if main_py.is_file():
+                        try:
+                            tree = ast.parse(main_py.read_text())
+                            doc = ast.get_docstring(tree) or ""
+                            desc = doc.split("\n")[0]
+                        except Exception:
+                            pass
+                    click.echo(f"  {d.name:<16} {desc}")
             else:
                 click.echo("\nNo project tools found.")
     else:
