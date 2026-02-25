@@ -1,7 +1,7 @@
 """Prebuilt web search tool for ezagent.
 
 Provides web search and page reading via a pluggable provider abstraction.
-Default provider: Brave Search API (requires BRAVE_SEARCH_API_KEY env var).
+Providers: Brave (default, BRAVE_SEARCH_API_KEY) or Perplexity (WEB_SEARCH_PROVIDER=perplexity, PERPLEXITY_API_KEY).
 """
 
 from __future__ import annotations
@@ -75,12 +75,64 @@ class BraveSearchProvider(SearchProvider):
         return results[:count]
 
 
+class PerplexitySearchProvider(SearchProvider):
+    """Perplexity Search API provider.
+
+    Requires the PERPLEXITY_API_KEY environment variable.
+    Uses POST https://api.perplexity.ai/search for raw ranked web results.
+    """
+
+    API_URL = "https://api.perplexity.ai/search"
+
+    def __init__(self) -> None:
+        self.api_key = os.environ.get("PERPLEXITY_API_KEY", "")
+        if not self.api_key:
+            raise RuntimeError(
+                "PERPLEXITY_API_KEY environment variable is not set. "
+                "Get an API key at https://docs.perplexity.ai/"
+            )
+
+    def search(self, query: str, count: int) -> list[dict]:
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        payload = {
+            "query": query,
+            "max_results": min(count, 20),
+        }
+        resp = requests.post(
+            self.API_URL,
+            headers=headers,
+            json=payload,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        results = []
+        for item in data.get("results", []):
+            # Handle both common field names (url/link, snippet/description)
+            url = item.get("url") or item.get("link", "")
+            snippet = item.get("snippet") or item.get("description", "")
+            results.append(
+                {
+                    "title": item.get("title", ""),
+                    "url": url,
+                    "snippet": snippet,
+                }
+            )
+        return results[:count]
+
+
 # ---------------------------------------------------------------------------
 # Provider registry
 # ---------------------------------------------------------------------------
 
 _PROVIDERS: dict[str, type[SearchProvider]] = {
     "brave": BraveSearchProvider,
+    "perplexity": PerplexitySearchProvider,
 }
 
 

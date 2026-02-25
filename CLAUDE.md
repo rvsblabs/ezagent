@@ -163,7 +163,7 @@ discussions:
 | Name | Functions | Env var required |
 |------|-----------|-----------------|
 | `memory` | memory_store, memory_search, memory_delete, memory_list, memory_collections | — |
-| `web_search` | web_search, web_search_read | BRAVE_SEARCH_API_KEY |
+| `web_search` | web_search, web_search_read | BRAVE_SEARCH_API_KEY or PERPLEXITY_API_KEY |
 | `http` | http_request, http_read | — |
 | `filesystem` | read_file, write_file, list_directory, create_directory | — |
 | `arxiv` | arxiv paper search and read | — |

@@ -70,7 +70,8 @@ ENV_EXAMPLE = """\
 
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=                   # only needed for provider: google
-BRAVE_SEARCH_API_KEY=             # only needed for the web_search prebuilt tool
+BRAVE_SEARCH_API_KEY=             # only needed for web_search with provider=brave (default)
+PERPLEXITY_API_KEY=               # only needed for web_search with WEB_SEARCH_PROVIDER=perplexity
 """
 
 EXAMPLE_AGENTS_YML = """\
@@ -242,7 +243,7 @@ discussions:
 | Name         | What it does                                    | Env var required       |
 |--------------|-------------------------------------------------|------------------------|
 | `memory`     | Persistent semantic memory (store/search/list)  | —                      |
-| `web_search` | Web search + read page content (Brave)          | BRAVE_SEARCH_API_KEY   |
+| `web_search` | Web search + read page content (Brave or Perplexity) | BRAVE_SEARCH_API_KEY or PERPLEXITY_API_KEY |
 | `http`       | Generic HTTP client (GET/POST/PUT/PATCH/DELETE) | —                      |
 | `filesystem` | Read/write/list local files and directories     | —                      |
 | `arxiv`      | Search and read ArXiv papers                    | —                      |
@@ -265,7 +266,8 @@ agents:
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # for provider: anthropic (default)
 export GOOGLE_API_KEY=...             # for provider: google
-export BRAVE_SEARCH_API_KEY=...       # only if using the web_search prebuilt tool
+export BRAVE_SEARCH_API_KEY=...       # web_search with provider=brave (default)
+export PERPLEXITY_API_KEY=...        # web_search with WEB_SEARCH_PROVIDER=perplexity
 ```
 
 ## Docker (containerized deployment)

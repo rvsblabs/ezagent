@@ -110,7 +110,7 @@ ezagent ships with prebuilt tools that don't require any local files. Add them t
 | Tool         | Description                                                                 |
 | ------------ | --------------------------------------------------------------------------- |
 | `memory`     | Persistent vector-based memory (store, search, delete, list) using Milvus Lite and sentence-transformers |
-| `web_search` | Web search and page reading via Brave Search API (requires `BRAVE_SEARCH_API_KEY`) |
+| `web_search` | Web search and page reading via Brave or Perplexity (requires `BRAVE_SEARCH_API_KEY` or `PERPLEXITY_API_KEY`) |
 | `http`       | Generic HTTP client for interacting with any REST API (no API key required by the tool) |
 | `filesystem` | Read, write, list, and create directories on the local file system (no API key required) |
 
@@ -150,15 +150,13 @@ The `web_search` tool gives agents two operations:
 - **`web_search(query, count?)`** — Search the web and return results with title, URL, and snippet (default 5 results, max 20).
 - **`web_search_read(url)`** — Fetch a URL's text content with HTML stripped, truncated to ~20,000 characters.
 
-Requires a Brave Search API key:
+Requires a search API key. Default provider is Brave:
 
 ```bash
 export BRAVE_SEARCH_API_KEY=your-key-here
 ```
 
-Get a free API key at [brave.com/search/api](https://brave.com/search/api/).
-
-You can select a different search provider via the `WEB_SEARCH_PROVIDER` env var (default: `"brave"`). Currently only Brave is supported.
+Get a free key at [brave.com/search/api](https://brave.com/search/api/). To use Perplexity instead, set `WEB_SEARCH_PROVIDER=perplexity` and `PERPLEXITY_API_KEY` (see [docs.perplexity.ai](https://docs.perplexity.ai/)).
 
 ```yaml
 agents:

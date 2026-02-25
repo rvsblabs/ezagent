@@ -255,9 +255,24 @@ uv run ez stop
 
 Get a free API key at [brave.com/search/api](https://brave.com/search/api/).
 
+### Using Perplexity as search provider
+
+To use Perplexity instead of Brave:
+
+```bash
+export WEB_SEARCH_PROVIDER=perplexity
+export PERPLEXITY_API_KEY=your-key-here
+
+uv run ez start
+uv run ez researcher "Search for the latest Python 3.13 features"
+uv run ez stop
+```
+
+Get an API key at [docs.perplexity.ai](https://docs.perplexity.ai/).
+
 ### Missing API key
 
-If `BRAVE_SEARCH_API_KEY` is not set, the tool returns an error message explaining how to get a key.
+If `BRAVE_SEARCH_API_KEY` (Brave) or `PERPLEXITY_API_KEY` (Perplexity) is not set, the tool returns an error message explaining how to get a key.
 
 ### Verify registration
 
