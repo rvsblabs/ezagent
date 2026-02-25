@@ -71,7 +71,7 @@ ENV_EXAMPLE = """\
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=                   # only needed for provider: google
 BRAVE_SEARCH_API_KEY=             # only needed for web_search with provider=brave (default)
-PERPLEXITY_API_KEY=               # only needed for web_search with WEB_SEARCH_PROVIDER=perplexity
+PERPLEXITY_API_KEY=               # web_search (WEB_SEARCH_PROVIDER=perplexity), perplexity_research, extract_structured
 """
 
 EXAMPLE_AGENTS_YML = """\
@@ -240,14 +240,16 @@ discussions:
 ```
 
 ## Prebuilt Tools (no files needed — just add the name to tools in agents.yml)
-| Name         | What it does                                    | Env var required       |
-|--------------|-------------------------------------------------|------------------------|
-| `memory`     | Persistent semantic memory (store/search/list)  | —                      |
-| `web_search` | Web search + read page content (Brave or Perplexity) | BRAVE_SEARCH_API_KEY or PERPLEXITY_API_KEY |
-| `http`       | Generic HTTP client (GET/POST/PUT/PATCH/DELETE) | —                      |
-| `filesystem` | Read/write/list local files and directories     | —                      |
-| `arxiv`      | Search and read ArXiv papers                    | —                      |
-| `pdf_reader` | Extract text from PDF files                     | —                      |
+| Name                  | What it does                                         | Env var required       |
+|-----------------------|------------------------------------------------------|------------------------|
+| `memory`              | Persistent semantic memory (store/search/list)       | —                      |
+| `web_search`         | Web search + read page content (Brave or Perplexity) | BRAVE_SEARCH_API_KEY or PERPLEXITY_API_KEY |
+| `perplexity_research` | Perplexity deep/pro/fast research (Responses API)    | PERPLEXITY_API_KEY     |
+| `extract_structured`  | Extract structured data from text (JSON schema)      | PERPLEXITY_API_KEY     |
+| `http`                | Generic HTTP client (GET/POST/PUT/PATCH/DELETE)      | —                      |
+| `filesystem`          | Read/write/list local files and directories          | —                      |
+| `arxiv`               | Search and read ArXiv papers                         | —                      |
+| `pdf_reader`          | Extract text from PDF files                          | —                      |
 
 ## Agent Delegation
 Agents can delegate to other agents by listing them in `tools`. The delegating agent
@@ -267,7 +269,7 @@ agents:
 export ANTHROPIC_API_KEY=sk-ant-...   # for provider: anthropic (default)
 export GOOGLE_API_KEY=...             # for provider: google
 export BRAVE_SEARCH_API_KEY=...       # web_search with provider=brave (default)
-export PERPLEXITY_API_KEY=...        # web_search with WEB_SEARCH_PROVIDER=perplexity
+export PERPLEXITY_API_KEY=...        # web_search, perplexity_research, extract_structured
 ```
 
 ## Docker (containerized deployment)

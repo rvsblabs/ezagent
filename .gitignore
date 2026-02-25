@@ -27,10 +27,9 @@ Thumbs.db
 
 # Testing
 testproject/
-
-# Daemon runtime files
-*.sock
-*.pid
 test*
+
+# Keep tests/ directory (contains pytest tests)
+!tests/
 
 portfolio_manager/

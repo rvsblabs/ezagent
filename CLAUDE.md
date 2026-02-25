@@ -164,6 +164,8 @@ discussions:
 |------|-----------|-----------------|
 | `memory` | memory_store, memory_search, memory_delete, memory_list, memory_collections | — |
 | `web_search` | web_search, web_search_read | BRAVE_SEARCH_API_KEY or PERPLEXITY_API_KEY |
+| `perplexity_research` | perplexity_research (presets: fast-search, pro-search, deep-research, advanced-deep-research) | PERPLEXITY_API_KEY |
+| `extract_structured` | extract_structured (text, json_schema) | PERPLEXITY_API_KEY |
 | `http` | http_request, http_read | — |
 | `filesystem` | read_file, write_file, list_directory, create_directory | — |
 | `arxiv` | arxiv paper search and read | — |
