@@ -474,3 +474,108 @@ ezagent/
         __init__.py    # Package marker
         main.py        # FastMCP server: read_file, write_file, list_directory, create_directory
 ```
+
+## Perplexity Integration Design
+
+Perplexity can integrate into ezagent in three distinct roles:
+
+1. **Search provider** — Perplexity as the backend for the `web_search` builtin
+2. **LLM provider** — Perplexity Sonar models for the agentic chat/tool-use loop
+3. **Structured output API** — Perplexity for JSON-schema extraction (separate from the main agent loop)
+
+### 1. Perplexity as Search Provider
+
+The `web_search` builtin uses a pluggable `SearchProvider` abstraction (Brave is the default).
+
+**Option A: Perplexity Search API**
+
+- Perplexity has a standalone **Search API** (`POST https://api.perplexity.ai/search`) that returns raw ranked web results.
+- Implement `PerplexitySearchProvider` implementing `SearchProvider.search(query, count)`.
+- Map Perplexity response (`ApiSearchPage` objects with title, url, snippet) to the existing `{title, url, snippet}` format.
+- Env: `WEB_SEARCH_PROVIDER=perplexity` and `PERPLEXITY_API_KEY`.
+
+**Option B: Omit web_search when using Perplexity LLM**
+
+- When `provider: perplexity`, Sonar models have **built-in grounded search**. The model searches internally when it needs current info.
+- Agents using Perplexity as LLM may not need the `web_search` tool at all.
+- Tradeoff: You lose explicit tool calls for search; behavior is opaque vs. explicit `web_search` calls.
+
+**Recommendation:** Implement Option A for consistency and flexibility. Users can choose Perplexity as search even when using a different LLM.
+
+---
+
+### 2. Perplexity as LLM Provider
+
+Add `PerplexityProvider` to `ezagent/llm/` following the existing `LLMProvider` interface.
+
+**API details:**
+- **Sonar API** (`/chat/completions`, OpenAI-compatible): Models `sonar`, `sonar-pro`, etc. Built-in search via `search_mode`. Does NOT accept custom tools — only Perplexity's built-in web_search/fetch_url.
+- **Agent API** (`/v1/responses`): Supports custom tools. Different request format (`input`, `instructions`). Verify if it returns tool_calls for us to execute or runs tools server-side.
+
+**Tool calling:** The Sonar chat completions API must support tools for the agent loop. Verify Perplexity supports OpenAI-style `tools` and `tool_calls` in chat completions. If not, Perplexity would only support “no-tools” mode (single-turn grounded answers).
+
+**Config:**
+```yaml
+provider: perplexity
+model: sonar-pro
+```
+
+**Implementation steps:**
+1. Add `ezagent/llm/perplexity.py` implementing `LLMProvider.chat()`.
+2. Use `openai` client with `base_url="https://api.perplexity.ai"` (or Perplexity Python SDK).
+3. Register in `create_provider()` in `llm/__init__.py`.
+4. Add `perplexity` to provider validation in config.
+5. Env: `PERPLEXITY_API_KEY`.
+
+**Note:** Sonar API does NOT support custom tools. Agent API (`POST /v1/responses`) does, but uses a different request format. Verify whether Agent API returns tool_calls for us to execute before investing in full integration.
+
+---
+
+### 3. Perplexity as Structured Output API
+
+ezagent’s agent loop currently returns free-form text and tool calls; there is no native “extraction” or “structured output” path.
+
+**Perplexity structured output:**
+- `response_format: { type: "json_schema", json_schema: { schema: {...} } }` for JSON extraction.
+- Optional `{ type: "regex", regex: { regex: "..." } }` for `sonar` model.
+
+**Design options:**
+
+**Option A: New “extraction” skill/tool**
+
+- Add a skill or tool that, when invoked, calls Perplexity with a JSON schema to extract structured data from text.
+- Use case: “Extract entities from this document” → Perplexity returns JSON matching the schema.
+
+**Option B: Extraction-as-a-tool**
+
+- New builtin tool `extract_structured` that takes `(text, json_schema)` and calls Perplexity’s structured output API.
+- Agent can call it like any other tool when it needs structured extraction.
+
+**Option C: Per-agent “extraction mode”**
+
+- Extend `AgentConfig` with `extraction_provider: perplexity` and `extraction_schema: {...}`.
+- When extraction is requested, the agent uses Perplexity for that step instead of the main LLM.
+
+**Caveats:**
+- First request with a new schema can be slow (10–30s) due to schema preparation.
+- `sonar-reasoning-pro` emits reasoning before JSON; you may need a parser to extract the JSON.
+
+**Recommendation:** Start with Option B — `extract_structured` as a builtin tool. Keeps structured output optional and avoids changing the agent loop.
+
+---
+
+### Implementation Order
+
+| Phase | Work | Risk |
+|-------|------|------|
+| 1 | Perplexity LLM provider | Verify tool-calling support in Sonar API |
+| 2 | Perplexity Search provider | Low; follows Brave pattern |
+| 3 | Structured output tool | Medium; new tool, schema handling |
+
+### Env Vars Summary
+
+| Role | Env Var |
+|------|---------|
+| Search | `PERPLEXITY_API_KEY`, `WEB_SEARCH_PROVIDER=perplexity` |
+| LLM | `PERPLEXITY_API_KEY` |
+| Structured output | `PERPLEXITY_API_KEY` (same key) |
