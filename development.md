@@ -492,11 +492,12 @@ ezagent/
 
 ## Perplexity Integration Design
 
-Perplexity can integrate into ezagent in three distinct roles:
+Perplexity can integrate into ezagent in several roles:
 
-1. **Search provider** — Perplexity as the backend for the `web_search` builtin
-2. **LLM provider** — Perplexity Sonar models for the agentic chat/tool-use loop
-3. **Structured output API** — Perplexity for JSON-schema extraction (separate from the main agent loop)
+1. **Search provider** — Perplexity as the backend for the `web_search` builtin ✅ Implemented
+2. **Responses API as tools** — `perplexity_research` calls `/v1/responses` with presets ✅ Implemented
+3. **Structured output API** — `extract_structured` tool for JSON-schema extraction ✅ Implemented
+4. **LLM provider** — Perplexity Sonar models for the agentic chat/tool-use loop
 
 ### 1. Perplexity as Search Provider
 
@@ -575,22 +576,33 @@ ezagent’s agent loop currently returns free-form text and tool calls; there is
 - First request with a new schema can be slow (10–30s) due to schema preparation.
 - `sonar-reasoning-pro` emits reasoning before JSON; you may need a parser to extract the JSON.
 
-**Recommendation:** Start with Option B — `extract_structured` as a builtin tool. Keeps structured output optional and avoids changing the agent loop.
+**Recommendation:** Option B implemented — `extract_structured` builtin tool.
+
+### 4. Perplexity Responses API as Tools (Implemented)
+
+The `perplexity_research` prebuilt tool calls `POST /v1/responses` with presets:
+- `fast-search` — Quick answers (~1 step)
+- `pro-search` — Balanced research (~3 steps)
+- `deep-research` — In-depth analysis (~10 steps)
+- `advanced-deep-research` — Institutional-grade research
+
+Agents add `perplexity_research` to their tools list and call it when they need AI-synthesized research rather than raw search results.
 
 ---
 
 ### Implementation Order
 
-| Phase | Work | Risk |
-|-------|------|------|
-| 1 | Perplexity LLM provider | Verify tool-calling support in Sonar API |
-| 2 | Perplexity Search provider | Low; follows Brave pattern |
-| 3 | Structured output tool | Medium; new tool, schema handling |
+| Phase | Work | Status |
+|-------|------|--------|
+| 1 | Perplexity Search provider | ✅ Done (Option A) |
+| 2 | Perplexity Responses as tools | ✅ Done (`perplexity_research`) |
+| 3 | Structured output tool | ✅ Done (`extract_structured`) |
+| 4 | Perplexity LLM provider | Pending; verify tool-calling support in Sonar API |
 
 ### Env Vars Summary
 
 | Role | Env Var |
 |------|---------|
 | Search | `PERPLEXITY_API_KEY`, `WEB_SEARCH_PROVIDER=perplexity` |
-| LLM | `PERPLEXITY_API_KEY` |
-| Structured output | `PERPLEXITY_API_KEY` (same key) |
+| perplexity_research, extract_structured | `PERPLEXITY_API_KEY` |
+| LLM (future) | `PERPLEXITY_API_KEY` |

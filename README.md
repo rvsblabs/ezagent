@@ -107,12 +107,14 @@ Or a full `pyproject.toml` for more control. ezagent uses `uv` to run the tool i
 
 ezagent ships with prebuilt tools that don't require any local files. Add them to your `agents.yml` tools list by name:
 
-| Tool         | Description                                                                 |
-| ------------ | --------------------------------------------------------------------------- |
-| `memory`     | Persistent vector-based memory (store, search, delete, list) using Milvus Lite and sentence-transformers |
-| `web_search` | Web search and page reading via Brave or Perplexity (requires `BRAVE_SEARCH_API_KEY` or `PERPLEXITY_API_KEY`) |
-| `http`       | Generic HTTP client for interacting with any REST API (no API key required by the tool) |
-| `filesystem` | Read, write, list, and create directories on the local file system (no API key required) |
+| Tool                  | Description                                                                 |
+| --------------------- | --------------------------------------------------------------------------- |
+| `memory`              | Persistent vector-based memory (store, search, delete, list) using Milvus Lite and sentence-transformers |
+| `web_search`          | Web search and page reading via Brave or Perplexity (requires `BRAVE_SEARCH_API_KEY` or `PERPLEXITY_API_KEY`) |
+| `perplexity_research` | Perplexity Responses API: deep research, pro-search, fast-search (requires `PERPLEXITY_API_KEY`) |
+| `extract_structured`  | Extract structured data from text via Perplexity JSON Schema (requires `PERPLEXITY_API_KEY`) |
+| `http`                | Generic HTTP client for interacting with any REST API (no API key required by the tool) |
+| `filesystem`          | Read, write, list, and create directories on the local file system (no API key required) |
 
 ```yaml
 agents:
@@ -163,6 +165,37 @@ agents:
   researcher:
     tools: web_search
     description: "An agent that can search the web"
+```
+
+#### Perplexity research tool
+
+The `perplexity_research` tool calls Perplexity's Responses API for AI-synthesized research. Presets control depth:
+
+- **`fast-search`** — Quick answers (~1 step)
+- **`pro-search`** — Balanced research (~3 steps)
+- **`deep-research`** — In-depth analysis (~10 steps, 2–4 min)
+- **`advanced-deep-research`** — Institutional-grade research
+
+Requires `PERPLEXITY_API_KEY` (see [docs.perplexity.ai](https://docs.perplexity.ai/)).
+
+```yaml
+agents:
+  analyst:
+    tools: perplexity_research
+    description: "An agent that conducts deep research on topics"
+```
+
+#### Extract structured tool
+
+The `extract_structured` tool extracts structured data from unstructured text using Perplexity's JSON Schema output. Use for entity extraction, form filling, or converting text to structured formats.
+
+Requires `PERPLEXITY_API_KEY`.
+
+```yaml
+agents:
+  parser:
+    tools: extract_structured
+    description: "An agent that extracts structured data from documents"
 ```
 
 #### HTTP tool
