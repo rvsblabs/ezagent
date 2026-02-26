@@ -254,6 +254,9 @@ export ANTHROPIC_API_KEY=sk-...
 
 # Google Gemini
 export GOOGLE_API_KEY=your-key-here
+
+# DeepSeek
+export DEEPSEEK_API_KEY=your-key-here
 ```
 
 ### 6. Run
@@ -371,10 +374,11 @@ This adds the missing `Dockerfile`, `docker-compose.yml`, `.dockerignore`, and `
 
 ezagent supports multiple LLM providers. Set the provider globally or per-agent in `agents.yml`.
 
-| Provider    | Name in config | Default model              | Env variable        |
-| ----------- | -------------- | -------------------------- | ------------------- |
-| Anthropic   | `anthropic`    | `claude-sonnet-4-20250514` | `ANTHROPIC_API_KEY` |
-| Google Gemini | `google`     | `gemini-2.0-flash`         | `GOOGLE_API_KEY`    |
+| Provider      | Name in config | Default model              | Env variable        |
+| ------------- | -------------- | -------------------------- | ------------------- |
+| Anthropic     | `anthropic`    | `claude-sonnet-4-20250514` | `ANTHROPIC_API_KEY` |
+| Google Gemini | `google`       | `gemini-2.0-flash`         | `GOOGLE_API_KEY`    |
+| DeepSeek      | `deepseek`     | `deepseek-chat`            | `DEEPSEEK_API_KEY`  |
 
 ### Global provider
 
@@ -450,7 +454,7 @@ Scheduler logs are written to `.ezagent/scheduler.log` inside the project direct
 - **Agent-as-tool**: Agents listed in another agent's `tools` become callable tools with a `{"message": string}` interface
 - **Scheduler**: Cron-based background task that fires agent runs on a schedule, running alongside the socket server in the same asyncio event loop
 - **HTTP API** (`ez serve`): Optional FastAPI server that bridges the Unix-socket daemon and SQLite event log over HTTP + WebSocket; runs as a separate process from the daemon
-- **LLM**: Provider-agnostic design with an `LLMProvider` ABC; implements Anthropic and Google Gemini
+- **LLM**: Provider-agnostic design with an `LLMProvider` ABC; implements Anthropic, Google Gemini, and DeepSeek
 
 ## TODO
 * Test Gemini Provider, it's not tested due to missing API key.
