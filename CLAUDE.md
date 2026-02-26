@@ -31,11 +31,10 @@ uv run ez serve --port 8080          # Custom port
 uv sync --group dev                  # Install dev dependencies (pytest)
 uv run pytest tests/                 # Run all tests
 uv run pytest tests/ -x -q          # Fail-fast, quiet output
-uv run pytest tests/test_event_log.py       # EventLogger unit tests
-uv run pytest tests/test_agent_logging.py   # Agent + EventLogger integration
-uv run pytest tests/test_discussion_logging.py  # Discussion + EventLogger
+uv run pytest tests/test_event_log.py       # EventLogger unit tests (agent_runs, tool_invocations, llm_calls, discussion_runs, discussion_turns)
+uv run pytest tests/test_orchestration_event_log.py  # Orchestration + EventLogger
 uv run pytest tests/test_config_and_cli.py  # Config + CLI logs command
-uv run pytest tests/test_llm_providers.py   # LLM provider factory + DeepSeek + OpenAI
+uv run pytest tests/test_llm_providers.py   # LLM provider factory + DeepSeek + OpenAI + Google
 ```
 
 > **In user projects** (not this repo): run `ez update-docs` after upgrading ezagent to regenerate the project's `CLAUDE.md` from the latest template.
@@ -71,10 +70,10 @@ ezagent/
       arxiv/      # ArXiv paper search
       pdf_reader/ # PDF text extraction
 tests/
-  test_event_log.py           # EventLogger unit tests (all 5 tables, lifecycle, isolation)
-  test_agent_logging.py       # Agent + EventLogger integration (mock LLM, delegation)
-  test_discussion_logging.py  # DiscussionRuntime + EventLogger integration
-  test_config_and_cli.py      # ProjectConfig.events_db_path + ez logs CLI command
+  test_event_log.py              # EventLogger unit tests (agent_runs, tool_invocations, llm_calls, discussion_runs, discussion_turns)
+  test_orchestration_event_log.py # Orchestration runs + EventLogger
+  test_config_and_cli.py         # ProjectConfig.events_db_path + ez logs CLI
+  test_llm_providers.py          # create_provider + DeepSeek, OpenAI, Google (mock-based)
 ```
 
 ## Core Abstractions

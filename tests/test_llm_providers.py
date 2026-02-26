@@ -38,6 +38,21 @@ def test_create_provider_openai_with_model():
         assert provider.model == "gpt-4o-mini"
 
 
+def test_create_provider_google():
+    """create_provider returns GoogleProvider for 'google'."""
+    with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+        provider = create_provider("google")
+        assert provider is not None
+        assert provider.model == "gemini-2.0-flash"
+
+
+def test_create_provider_google_with_model():
+    """create_provider passes model override to GoogleProvider."""
+    with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+        provider = create_provider("google", model="gemini-1.5-pro")
+        assert provider.model == "gemini-1.5-pro"
+
+
 def test_create_provider_unknown_raises():
     """create_provider raises for unknown provider."""
     with pytest.raises(ValueError, match="Unknown LLM provider 'foo'"):
@@ -63,6 +78,16 @@ def test_openai_provider_requires_api_key():
 
         with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
             OpenAIProvider()
+
+
+def test_google_provider_requires_api_key():
+    """GoogleProvider raises if GOOGLE_API_KEY is not set."""
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("GOOGLE_API_KEY", None)
+        from ezagent.llm.google import GoogleProvider
+
+        with pytest.raises(RuntimeError, match="GOOGLE_API_KEY"):
+            GoogleProvider()
 
 
 @pytest.mark.asyncio
@@ -210,6 +235,84 @@ async def test_openai_provider_chat_tool_calls():
         assert result.text == ""
         assert len(result.tool_calls) == 1
         assert result.tool_calls[0].id == "call_456"
+        assert result.tool_calls[0].name == "get_weather"
+        assert result.tool_calls[0].input == {"city": "NYC"}
+        assert result.stop_reason == "tool_use"
+
+
+@pytest.mark.asyncio
+async def test_google_provider_chat_text_response():
+    """GoogleProvider.chat returns LLMResponse from API."""
+    with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+        from ezagent.llm.google import GoogleProvider
+
+        mock_part = MagicMock()
+        mock_part.text = "Hello from Gemini!"
+        mock_part.function_call = None
+
+        mock_content = MagicMock()
+        mock_content.parts = [mock_part]
+
+        mock_candidate = MagicMock()
+        mock_candidate.content = mock_content
+
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+
+        provider = GoogleProvider()
+        provider.client = AsyncMock()
+        provider.client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        result = await provider.chat(
+            messages=[{"role": "user", "content": "Hi"}],
+            system="You are helpful.",
+        )
+
+        assert result.text == "Hello from Gemini!"
+        assert result.tool_calls == []
+        assert result.stop_reason == "end_turn"
+
+
+@pytest.mark.asyncio
+async def test_google_provider_chat_tool_calls():
+    """GoogleProvider.chat parses tool_calls from API response."""
+    with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}):
+        from ezagent.llm.google import GoogleProvider
+
+        mock_fc = MagicMock()
+        mock_fc.name = "get_weather"
+        mock_fc.args = {"city": "NYC"}
+
+        mock_part = MagicMock()
+        mock_part.text = None
+        mock_part.function_call = mock_fc
+
+        mock_content = MagicMock()
+        mock_content.parts = [mock_part]
+
+        mock_candidate = MagicMock()
+        mock_candidate.content = mock_content
+
+        mock_response = MagicMock()
+        mock_response.candidates = [mock_candidate]
+
+        provider = GoogleProvider()
+        provider.client = AsyncMock()
+        provider.client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        result = await provider.chat(
+            messages=[{"role": "user", "content": "What's the weather in NYC?"}],
+            tools=[
+                {
+                    "name": "get_weather",
+                    "description": "Get weather",
+                    "input_schema": {"type": "object", "properties": {"city": {"type": "string"}}},
+                }
+            ],
+        )
+
+        assert result.text == ""
+        assert len(result.tool_calls) == 1
         assert result.tool_calls[0].name == "get_weather"
         assert result.tool_calls[0].input == {"city": "NYC"}
         assert result.stop_reason == "tool_use"

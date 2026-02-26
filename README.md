@@ -460,8 +460,6 @@ Scheduler logs are written to `.ezagent/scheduler.log` inside the project direct
 - **HTTP API** (`ez serve`): Optional FastAPI server that bridges the Unix-socket daemon and SQLite event log over HTTP + WebSocket; runs as a separate process from the daemon
 - **LLM**: Provider-agnostic design with an `LLMProvider` ABC; implements Anthropic, Google Gemini, and DeepSeek
 
-## TODO
-* Test Gemini Provider, it's not tested due to missing API key.
 
 ## License
 
