@@ -252,6 +252,9 @@ Set the key for the provider(s) you plan to use:
 # Anthropic (default provider)
 export ANTHROPIC_API_KEY=sk-...
 
+# OpenAI
+export OPENAI_API_KEY=your-key-here
+
 # Google Gemini
 export GOOGLE_API_KEY=your-key-here
 
@@ -379,6 +382,7 @@ ezagent supports multiple LLM providers. Set the provider globally or per-agent 
 | Anthropic     | `anthropic`    | `claude-sonnet-4-20250514` | `ANTHROPIC_API_KEY` |
 | Google Gemini | `google`       | `gemini-2.0-flash`         | `GOOGLE_API_KEY`    |
 | DeepSeek      | `deepseek`     | `deepseek-chat`            | `DEEPSEEK_API_KEY`  |
+| OpenAI        | `openai`       | `gpt-4o`                   | `OPENAI_API_KEY`    |
 
 ### Global provider
 

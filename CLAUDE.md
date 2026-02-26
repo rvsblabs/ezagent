@@ -35,7 +35,7 @@ uv run pytest tests/test_event_log.py       # EventLogger unit tests
 uv run pytest tests/test_agent_logging.py   # Agent + EventLogger integration
 uv run pytest tests/test_discussion_logging.py  # Discussion + EventLogger
 uv run pytest tests/test_config_and_cli.py  # Config + CLI logs command
-uv run pytest tests/test_llm_providers.py   # LLM provider factory + DeepSeek
+uv run pytest tests/test_llm_providers.py   # LLM provider factory + DeepSeek + OpenAI
 ```
 
 > **In user projects** (not this repo): run `ez update-docs` after upgrading ezagent to regenerate the project's `CLAUDE.md` from the latest template.
@@ -58,6 +58,7 @@ ezagent/
     anthropic.py  # AnthropicProvider (claude-sonnet-4-20250514 default)
     google.py     # GoogleProvider (gemini-2.0-flash default)
     deepseek.py   # DeepSeekProvider (deepseek-chat default)
+    openai.py     # OpenAIProvider (gpt-4o default)
     __init__.py   # create_provider(name, model) factory
   tools/
     manager.py    # ToolManager — FastMCP client lifecycle, schema conversion, tool dispatch
@@ -137,7 +138,7 @@ class LLMProvider(ABC):
 
 ## agents.yml Full Reference
 ```yaml
-provider: anthropic          # "anthropic" | "google" | "deepseek" (global default)
+provider: anthropic          # "anthropic" | "google" | "deepseek" | "openai" (global default)
 model: claude-sonnet-4-20250514  # optional global model
 
 agents:
@@ -145,7 +146,7 @@ agents:
     tools: tool1, agent2     # CSV: local tool dirs, other agent names, prebuilt names, or git refs
     skills: skill1           # CSV: markdown files in skills/ (omit .md)
     description: "..."       # Becomes system prompt prefix
-    provider: anthropic      # optional per-agent override (anthropic | google | deepseek)
+    provider: anthropic      # optional per-agent override (anthropic | google | deepseek | openai)
     model: "..."             # optional per-agent model override
     schedule:
       - cron: "0 9 * * *"   # standard 5-field cron expression
@@ -219,3 +220,4 @@ Inspect directly: `sqlite3 .ezagent/events.db "SELECT agent_name,status,duration
 | `ANTHROPIC_API_KEY not set` | `export ANTHROPIC_API_KEY=sk-ant-...` |
 | `GOOGLE_API_KEY not set` | `export GOOGLE_API_KEY=...` (when using provider: google) |
 | `DEEPSEEK_API_KEY not set` | `export DEEPSEEK_API_KEY=...` (when using provider: deepseek) |
+| `OPENAI_API_KEY not set` | `export OPENAI_API_KEY=...` (when using provider: openai) |

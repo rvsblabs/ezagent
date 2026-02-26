@@ -7,7 +7,7 @@ def create_provider(name: str, model: str = "") -> LLMProvider:
     """Create an LLM provider by name.
 
     Args:
-        name: Provider name ("anthropic", "google", or "deepseek").
+        name: Provider name ("anthropic", "google", "deepseek", or "openai").
         model: Optional model override. Uses provider default if empty.
     """
     if name == "anthropic":
@@ -22,7 +22,11 @@ def create_provider(name: str, model: str = "") -> LLMProvider:
         from .deepseek import DeepSeekProvider
 
         return DeepSeekProvider(model=model) if model else DeepSeekProvider()
+    elif name == "openai":
+        from .openai import OpenAIProvider
+
+        return OpenAIProvider(model=model) if model else OpenAIProvider()
     else:
         raise ValueError(
-            f"Unknown LLM provider '{name}'. Supported: anthropic, google, deepseek"
+            f"Unknown LLM provider '{name}'. Supported: anthropic, google, deepseek, openai"
         )

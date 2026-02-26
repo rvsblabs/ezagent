@@ -69,6 +69,7 @@ ENV_EXAMPLE = """\
 # Never commit .env to version control.
 
 ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=                   # only needed for provider: openai
 GOOGLE_API_KEY=                   # only needed for provider: google
 BRAVE_SEARCH_API_KEY=             # only needed for web_search with provider=brave (default)
 PERPLEXITY_API_KEY=               # web_search (WEB_SEARCH_PROVIDER=perplexity), perplexity_research, extract_structured
@@ -211,7 +212,7 @@ The full content is loaded only when the agent calls `use_skill("<name>")`.
 
 ## agents.yml Reference
 ```yaml
-provider: anthropic          # "anthropic" | "google"  (global default)
+provider: anthropic          # "anthropic" | "google" | "deepseek" | "openai" (global default)
 model: claude-sonnet-4-20250514  # optional — overrides provider default
 
 agents:
@@ -275,6 +276,7 @@ agents:
 ## Required Environment Variables
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # for provider: anthropic (default)
+export OPENAI_API_KEY=...             # for provider: openai
 export GOOGLE_API_KEY=...             # for provider: google
 export BRAVE_SEARCH_API_KEY=...       # web_search with provider=brave (default)
 export PERPLEXITY_API_KEY=...        # web_search, perplexity_research, extract_structured

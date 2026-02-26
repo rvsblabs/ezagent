@@ -22,7 +22,7 @@ All commands must use `uv run` from the repo root (e.g. `uv run ez --version`). 
 
 ### Daemon startup caveat
 
-- `ez start` requires `ANTHROPIC_API_KEY` (or `GOOGLE_API_KEY` if using `provider: google`, or `DEEPSEEK_API_KEY` if using `provider: deepseek`) to be set. The daemon validates LLM provider credentials at startup and will fail immediately without them.
+- `ez start` requires `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY` for `provider: openai`, `GOOGLE_API_KEY` for `provider: google`, or `DEEPSEEK_API_KEY` for `provider: deepseek`) to be set. The daemon validates LLM provider credentials at startup and will fail immediately without them.
 - CLI commands that do not require a running daemon (`ez init`, `ez status`, `ez tools`, `ez create`, `ez logs`, `ez serve`) work without API keys.
 - `ez serve` runs the HTTP API independently of the daemon; it can report config/status/logs even when the daemon is stopped.
 

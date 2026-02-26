@@ -1,4 +1,4 @@
-"""DeepSeek LLM provider using OpenAI-compatible API."""
+"""OpenAI LLM provider."""
 
 from __future__ import annotations
 
@@ -11,22 +11,19 @@ from .base import LLMProvider
 from ._openai_compat import convert_messages, convert_tools, parse_response
 
 
-class DeepSeekProvider(LLMProvider):
-    """Provider for DeepSeek models via OpenAI-compatible API."""
+class OpenAIProvider(LLMProvider):
+    """Provider for OpenAI models (GPT-4o, GPT-4o-mini, etc.)."""
 
-    DEFAULT_MODEL = "deepseek-chat"
+    DEFAULT_MODEL = "gpt-4o"
 
     def __init__(self, model: str = DEFAULT_MODEL):
-        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise RuntimeError(
-                "DEEPSEEK_API_KEY environment variable is not set. "
+                "OPENAI_API_KEY environment variable is not set. "
                 "Set it before starting the daemon."
             )
-        self.client = AsyncOpenAI(
-            api_key=api_key,
-            base_url="https://api.deepseek.com",
-        )
+        self.client = AsyncOpenAI(api_key=api_key)
         self.model = model
 
     async def chat(
