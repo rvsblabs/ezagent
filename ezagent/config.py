@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 from typing import Dict, List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
 from pydantic import BaseModel, field_validator, model_validator
@@ -96,6 +97,16 @@ class ProjectConfig(BaseModel):
     project_dir: Path
     provider: str = "anthropic"
     model: str = ""
+    timezone: str = "UTC"
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: str) -> str:
+        try:
+            ZoneInfo(v)
+        except ZoneInfoNotFoundError:
+            raise ValueError(f"Unknown timezone: {v!r}. Use a valid IANA timezone name (e.g. 'America/New_York').")
+        return v
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -260,4 +271,5 @@ def load_config(project_dir: Optional[Path] = None) -> ProjectConfig:
         project_dir=project_dir,
         provider=raw.get("provider", "anthropic"),
         model=raw.get("model", ""),
+        timezone=raw.get("timezone", "UTC"),
     )
