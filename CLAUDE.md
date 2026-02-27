@@ -64,6 +64,7 @@ ezagent/
     builtins/
       __init__.py # PREBUILT_TOOLS dict: name → Path to builtin package dir
       memory/     # Persistent vector memory (Milvus Lite + sentence-transformers)
+      sqlite/     # Deterministic key-value store (SQLite)
       web_search/ # Brave Search API + page reading
       http/       # Generic HTTP client
       filesystem/ # Read/write/list local files
@@ -178,6 +179,7 @@ orchestrations:
 | Name | Functions | Env var required |
 |------|-----------|-----------------|
 | `memory` | memory_store, memory_search, memory_delete, memory_list, memory_collections | — |
+| `sqlite` | sqlite_store, sqlite_get, sqlite_delete, sqlite_list | — |
 | `web_search` | web_search, web_search_read | BRAVE_SEARCH_API_KEY or PERPLEXITY_API_KEY |
 | `perplexity_research` | perplexity_research (presets: fast-search, pro-search, deep-research, advanced-deep-research) | PERPLEXITY_API_KEY |
 | `extract_structured` | extract_structured (text, json_schema) | PERPLEXITY_API_KEY |
@@ -191,6 +193,7 @@ orchestrations:
 - PID file: `/tmp/ezagent_<md5-of-project-dir>.pid`
 - Scheduler log: `.ezagent/scheduler.log` in project dir
 - Memory DB: `.ezagent/memory/milvus.db` in project dir
+- SQLite store: `.ezagent/sqlite/store.db` in project dir (deterministic key-value)
 - Event log DB: `.ezagent/events.db` in project dir (SQLite, 6 tables)
 
 ## Event Log Schema

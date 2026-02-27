@@ -110,6 +110,7 @@ ezagent ships with prebuilt tools that don't require any local files. Add them t
 | Tool                  | Description                                                                 |
 | --------------------- | --------------------------------------------------------------------------- |
 | `memory`              | Persistent vector-based memory (store, search, delete, list) using Milvus Lite and sentence-transformers |
+| `sqlite`              | Deterministic key-value store (store, get, delete, list) using SQLite — for exact lookups and reproducible state |
 | `web_search`          | Web search and page reading via Brave or Perplexity (requires `BRAVE_SEARCH_API_KEY` or `PERPLEXITY_API_KEY`) |
 | `perplexity_research` | Perplexity Responses API: deep research, pro-search, fast-search (requires `PERPLEXITY_API_KEY`) |
 | `extract_structured`  | Extract structured data from text via Perplexity JSON Schema (requires `PERPLEXITY_API_KEY`) |
@@ -144,6 +145,17 @@ facts          — factual knowledge
 ```
 
 Memories are stored locally in `.ezagent/memory/milvus.db` inside the project directory. Embeddings are generated locally using the `all-MiniLM-L6-v2` model (downloaded on first use, ~90MB).
+
+#### SQLite tool
+
+The `sqlite` tool provides deterministic key-value storage for exact lookups and reproducible workloads (e.g. preferences, caches, state). Data is stored in `.ezagent/sqlite/store.db` in the project directory.
+
+- **`sqlite_store(key, value)`** — Store a value by key (overwrites if key exists).
+- **`sqlite_get(key)`** — Get a value by key (returns `found: true/false` and `value`).
+- **`sqlite_delete(key)`** — Delete a key and its value.
+- **`sqlite_list(prefix?)`** — List stored keys, optionally filtered by prefix (e.g. `"user:"`).
+
+Use key namespacing (e.g. `user:alice`, `config:theme`) to organize data. No API key required.
 
 #### Web search tool
 
