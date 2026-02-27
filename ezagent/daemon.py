@@ -8,6 +8,7 @@ import signal
 import socket
 import sys
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, Optional
 
 import click
@@ -155,7 +156,8 @@ class AgentDaemon:
 
     def _build_schedule(self):
         """Build the list of scheduled entries from agent and discussion configs."""
-        now = datetime.now(timezone.utc)
+        tz = ZoneInfo(self.config.timezone)
+        now = datetime.now(tz)
         for name, agent_config in self.config.agents.items():
             for entry in agent_config.schedule:
                 cron_iter = croniter(entry.cron, now)
@@ -678,7 +680,8 @@ def get_status() -> dict:
 
     # Build agent info from config (used when daemon isn't running)
     config_agents = {}
-    now = datetime.now(timezone.utc)
+    tz = ZoneInfo(config.timezone)
+    now = datetime.now(tz)
     for name, ac in config.agents.items():
         provider_name = ac.provider or config.provider
         model = ac.model or config.model

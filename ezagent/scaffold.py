@@ -214,6 +214,7 @@ The full content is loaded only when the agent calls `use_skill("<name>")`.
 ```yaml
 provider: anthropic          # "anthropic" | "google" | "deepseek" | "openai" (global default)
 model: claude-sonnet-4-20250514  # optional — overrides provider default
+timezone: UTC                # optional — IANA timezone for cron schedules (e.g. "America/New_York")
 
 agents:
   <name>:

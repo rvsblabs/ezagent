@@ -139,6 +139,7 @@ class LLMProvider(ABC):
 ```yaml
 provider: anthropic          # "anthropic" | "google" | "deepseek" | "openai" (global default)
 model: claude-sonnet-4-20250514  # optional global model
+timezone: UTC                # optional — IANA timezone for cron schedules (e.g. "America/New_York")
 
 agents:
   <name>:
