@@ -209,6 +209,26 @@ orchestration_runs orchestration_uuid, orchestration_name, message, status, outp
 ```
 Inspect directly: `sqlite3 .ezagent/events.db "SELECT agent_name,status,duration_ms FROM agent_runs;"`
 
+## Avoiding Circular Loops
+
+Circular patterns are a common source of bugs in this codebase. Watch for these:
+
+### Agent reference cycles
+- `agents.yml`: if Agent A lists Agent B as a tool and Agent B lists Agent A, the config loader raises an error (detected via DFS in `config.py`).
+- Never create mutual agent-as-tool references. Use a dedicated orchestration or discussion instead.
+
+### Agentic loop runaway
+- `Agent.run()` loops until the LLM returns no tool calls. If a tool always returns output that triggers the same tool again, the agent will hit the max recursion depth (10) and error.
+- When writing tools, ensure they return terminal values, not outputs that prompt re-invocation of themselves.
+- When writing agent descriptions/skills, avoid instructions like "keep calling X until done" without a clear stopping condition.
+
+### Tool code recursion
+- Tools in `tools/<name>/main.py` are plain Python — infinite recursion crashes the MCP subprocess.
+- Always have a base case in any recursive tool helper. Prefer iteration over recursion.
+
+### Orchestration cycles
+- An orchestration's planner/workers/aggregator must not reference the same orchestration as a tool — this creates an infinite delegation loop.
+
 ## Common Errors
 | Error | Fix |
 |-------|-----|
