@@ -43,3 +43,4 @@ def test_cli_tools():
     result = runner.invoke(cli, ["tools"])
     assert result.exit_code == 0
     assert "memory" in result.output
+    assert "sqlite" in result.output
