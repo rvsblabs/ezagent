@@ -1,5 +1,19 @@
 from pathlib import Path
 
+PYPROJECT_TOML = """\
+[project]
+name = "{app_name}"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+serve = [
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.23",
+]
+"""
+
 DOCKERFILE = """\
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
@@ -160,17 +174,26 @@ skills/             # Skill instruction files
   <skill_name>.md   # First non-empty line becomes the skill summary
 ```
 
+## Setup
+```bash
+uv sync                         # Install dependencies
+uv sync --extra serve           # Also install HTTP server extras (fastapi + uvicorn)
+uv add <package>                # Add a new Python dependency
+```
+
 ## CLI Commands
 ```bash
-ez start                        # Start daemon (foreground, Ctrl+C to stop)
-ez start -d                     # Start daemon in background
-ez stop                         # Stop daemon
-ez status                       # Show running agents and scheduled tasks
-ez <agent> "<message>"          # Send a message to an agent
-ez run <agent> "<message>"      # Explicit form of the above
-ez --debug <agent> "<message>"  # Show tool calls and LLM steps
-ez create tool <name>           # Scaffold a new tool in tools/
-ez create skill <name>          # Scaffold a new skill in skills/
+uv run ez start                        # Start daemon (foreground, Ctrl+C to stop)
+uv run ez start -d                     # Start daemon in background
+uv run ez stop                         # Stop daemon
+uv run ez status                       # Show running agents and scheduled tasks
+uv run ez <agent> "<message>"          # Send a message to an agent
+uv run ez run <agent> "<message>"      # Explicit form of the above
+uv run ez --debug <agent> "<message>"  # Show tool calls and LLM steps
+uv run ez create tool <name>           # Scaffold a new tool in tools/
+uv run ez create skill <name>          # Scaffold a new skill in skills/
+uv run ez serve                        # Start HTTP + WebSocket API (requires serve extra)
+uv run ez serve --port 8080            # Custom port
 ```
 
 ## Creating a Tool
@@ -372,6 +395,9 @@ def create_project(app_name: str) -> Path:
 
     # Create agents.yml wired to the sample tool and skill
     (base / "agents.yml").write_text(EXAMPLE_AGENTS_YML)
+
+    # Create pyproject.toml so uv can manage dependencies
+    (base / "pyproject.toml").write_text(PYPROJECT_TOML.format(app_name=app_name))
 
     # Create CLAUDE.md so Claude Code understands this is an ezagent project
     (base / "CLAUDE.md").write_text(PROJECT_CLAUDE_MD)
