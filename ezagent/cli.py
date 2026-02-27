@@ -69,6 +69,7 @@ def init(app_name: str):
     try:
         path = create_project(app_name)
         click.echo(f"Created project at {path}")
+        click.echo(f"  {app_name}/pyproject.toml      — Python project + dependencies")
         click.echo(f"  {app_name}/agents.yml          — configure your agents")
         click.echo(f"  {app_name}/tools/              — add FastMCP tool servers here")
         click.echo(f"  {app_name}/skills/             — add skill .md files here")
@@ -76,6 +77,12 @@ def init(app_name: str):
         click.echo(f"  {app_name}/Dockerfile          — container image definition")
         click.echo(f"  {app_name}/docker-compose.yml  — containerized dev (daemon + api)")
         click.echo(f"  {app_name}/.env.example        — copy to .env and fill in API keys")
+        click.echo("")
+        click.echo("Next steps:")
+        click.echo(f"  cd {app_name}")
+        click.echo(f"  cp .env.example .env  # add your API keys")
+        click.echo(f"  uv sync               # install dependencies")
+        click.echo(f"  uv run ez start       # start the daemon")
     except FileExistsError as e:
         raise click.ClickException(str(e))
 
@@ -322,7 +329,7 @@ def serve(port: int, host: str):
         from ezagent.server import create_app
     except ImportError:
         raise click.ClickException(
-            "Install with: pip install 'ezagent[serve]' or uv sync --extra serve"
+            "Install with: uv sync --extra serve  (or pip install 'ezagent[serve]')"
         )
     from ezagent.config import load_config
     try:
