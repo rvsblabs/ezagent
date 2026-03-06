@@ -36,12 +36,10 @@ class OpenAIProvider(LLMProvider):
         openai_tools = convert_tools(tools) if tools else None
 
         # o-series and newer reasoning models only accept max_completion_tokens
+        _m = self.model.lower().replace("-", "")
         token_param = (
             "max_completion_tokens"
-            if self.model.split("-")[0] in {"o1", "o3", "o4", "o5", "gpt5"}
-            or self.model.startswith("o1")
-            or self.model.startswith("o3")
-            or self.model.startswith("o4")
+            if _m.startswith(("o1", "o3", "o4", "o5", "gpt5"))
             else "max_tokens"
         )
         kwargs: Dict[str, Any] = {
