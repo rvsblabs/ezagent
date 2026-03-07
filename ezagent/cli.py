@@ -289,14 +289,43 @@ def status():
 @cli.command()
 @click.argument("agent_name")
 @click.argument("message", nargs=-1, required=True)
+@click.option("--mock", "mock_fixture", default=None, help="Path to fixture YAML for mock mode (no daemon needed).")
+@click.option("--record", "record_output", default=None, help="Record live run to fixture YAML at this path.")
 @click.pass_context
-def run(ctx: click.Context, agent_name: str, message: tuple[str, ...]):
+def run(ctx: click.Context, agent_name: str, message: tuple[str, ...], mock_fixture: str | None, record_output: str | None):
     """Send a message to an agent. Usage: ez run <agent> <message>"""
-    from ezagent.daemon import send_message
-
     debug = ctx.obj.get("debug", False)
     full_message = " ".join(message)
-    send_message(agent_name, full_message, debug=debug)
+
+    if mock_fixture:
+        from ezagent.config import load_config
+        from ezagent.mock import run_with_fixture
+
+        try:
+            config = load_config()
+        except (FileNotFoundError, ValueError) as e:
+            raise click.ClickException(str(e))
+        result = run_with_fixture(
+            agent_name, full_message, Path(mock_fixture), config.project_dir, config, debug
+        )
+        click.echo(result)
+    elif record_output:
+        from ezagent.config import load_config
+        from ezagent.recording import run_with_recording
+
+        try:
+            config = load_config()
+        except (FileNotFoundError, ValueError) as e:
+            raise click.ClickException(str(e))
+        result = run_with_recording(
+            agent_name, full_message, Path(record_output), config.project_dir, config, debug
+        )
+        click.echo(result)
+        click.echo(f"Fixture saved to {record_output}", err=True)
+    else:
+        from ezagent.daemon import send_message
+
+        send_message(agent_name, full_message, debug=debug)
 
 
 @cli.command("discuss")
@@ -317,6 +346,51 @@ def orchestrate(orchestration_name: str, message: tuple[str, ...]):
     from ezagent.daemon import send_orchestration
 
     send_orchestration(orchestration_name, " ".join(message))
+
+
+@cli.command("eval")
+@click.argument("eval_file")
+@click.pass_context
+def eval_cmd(ctx: click.Context, eval_file: str):
+    """Run evaluation dataset against an agent. Usage: ez eval <eval_file>"""
+    from ezagent.config import load_config
+    from ezagent.eval import run_eval
+
+    debug = ctx.obj.get("debug", False)
+    try:
+        config = load_config()
+    except (FileNotFoundError, ValueError) as e:
+        raise click.ClickException(str(e))
+
+    results = run_eval(Path(eval_file), config, debug)
+
+    # Print results table
+    col_id = 20
+    col_status = 6
+    col_scorer = 10
+    col_expected = 24
+    col_output = 32
+    header = (
+        f"{'ID':<{col_id}} {'PASS':<{col_status}} {'SCORER':<{col_scorer}} "
+        f"{'EXPECTED':<{col_expected}} OUTPUT"
+    )
+    click.echo(header)
+    click.echo("-" * len(header))
+    for r in results:
+        status = "PASS" if r.passed else "FAIL"
+        expected_trunc = r.expected[:col_expected - 3] + "..." if len(r.expected) > col_expected else r.expected
+        if r.error:
+            output_str = f"ERROR: {r.error}"
+        else:
+            output_str = r.output[:col_output - 3] + "..." if len(r.output) > col_output else r.output
+        click.echo(
+            f"{r.case_id:<{col_id}} {status:<{col_status}} {r.scorer:<{col_scorer}} "
+            f"{expected_trunc:<{col_expected}} {output_str}"
+        )
+
+    passed = sum(1 for r in results if r.passed)
+    total = len(results)
+    click.echo(f"\n{passed}/{total} passed")
 
 
 @cli.command("serve")
