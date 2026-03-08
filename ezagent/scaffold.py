@@ -157,7 +157,7 @@ SKILL_TEMPLATE = """\
 Describe what this skill does and how the agent should behave.
 """
 
-PROJECT_CLAUDE_MD = """\
+PROJECT_AGENTS_MD = """\
 # ezagent Project
 
 This is an [ezagent](https://github.com/rvsblabs/ezagent) project.
@@ -399,8 +399,8 @@ def create_project(app_name: str) -> Path:
     # Create pyproject.toml so uv can manage dependencies
     (base / "pyproject.toml").write_text(PYPROJECT_TOML.format(app_name=app_name))
 
-    # Create CLAUDE.md so Claude Code understands this is an ezagent project
-    (base / "CLAUDE.md").write_text(PROJECT_CLAUDE_MD)
+    # Create AGENTS.md as the project guide template
+    (base / "AGENTS.md").write_text(PROJECT_AGENTS_MD)
 
     # Create Docker scaffolding for containerized deployment
     (base / "Dockerfile").write_text(DOCKERFILE)

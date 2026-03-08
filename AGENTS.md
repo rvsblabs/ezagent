@@ -1,10 +1,8 @@
 # AGENTS.md
 
-## Cursor Cloud specific instructions
-
 ### Overview
 
-ezagent is a Python CLI SDK for multi-agent AI systems. The single service is a Python package installed via `uv sync`. See `CLAUDE.md` for full command reference and source layout.
+ezagent is a Python CLI SDK for multi-agent AI systems. The single service is a Python package installed via `uv sync`. See `README.md` for command reference and source layout.
 
 ### Running commands
 

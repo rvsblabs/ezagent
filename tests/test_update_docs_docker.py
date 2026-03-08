@@ -169,17 +169,17 @@ def test_update_docs_output_says_skipping_existing_docker_compose(tmp_path: Path
 
 
 # ---------------------------------------------------------------------------
-# Existing behaviour preserved: CLAUDE.md still updated
+# Existing behaviour preserved: AGENTS.md still updated
 # ---------------------------------------------------------------------------
 
-def test_update_docs_still_updates_claude_md(tmp_path: Path, monkeypatch):
+def test_update_docs_still_updates_agents_md(tmp_path: Path, monkeypatch):
     _make_project(tmp_path)
-    (tmp_path / "CLAUDE.md").write_text("# old content\n")
+    (tmp_path / "AGENTS.md").write_text("# old content\n")
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
     result = runner.invoke(cli, ["update-docs"], catch_exceptions=False)
     assert result.exit_code == 0
-    assert (tmp_path / "CLAUDE.md").read_text() != "# old content\n"
+    assert (tmp_path / "AGENTS.md").read_text() != "# old content\n"
     assert "Updated" in result.output
 
 

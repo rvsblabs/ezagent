@@ -37,7 +37,7 @@ uv run pytest tests/test_config_and_cli.py  # Config + CLI logs command
 uv run pytest tests/test_llm_providers.py   # LLM provider factory + DeepSeek + OpenAI + Google
 ```
 
-> **In user projects** (not this repo): run `ez update-docs` after upgrading ezagent to regenerate the project's `CLAUDE.md` from the latest template.
+> **In user projects** (not this repo): run `ez update-docs` after upgrading ezagent to regenerate the project's `AGENTS.md` from the latest template.
 
 ## Source Layout
 ```
