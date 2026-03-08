@@ -49,7 +49,7 @@ myproject/
   Dockerfile          # Container image definition
   docker-compose.yml  # Containerized dev (daemon + api services)
   .env.example        # Copy to .env and fill in API keys
-  CLAUDE.md           # Claude Code project guide
+  AGENTS.md           # Project guide
 ```
 
 ### 2. Configure agents
@@ -303,7 +303,7 @@ ez stop
 | `ez run <agent> <message>`   | Send a message to an agent              |
 | `ez <agent> <message>`       | Shorthand for `ez run`                  |
 | `ez serve`                   | Start the REST + WebSocket API server (requires `ezagent[serve]`) |
-| `ez update-docs`             | Regenerate CLAUDE.md and add missing Docker scaffold files (run after upgrading) |
+| `ez update-docs`             | Regenerate AGENTS.md and add missing Docker scaffold files (run after upgrading) |
 
 ### HTTP API server (`ez serve`)
 

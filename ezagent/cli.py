@@ -10,7 +10,7 @@ from ezagent.scaffold import (
     DOCKER_COMPOSE,
     DOCKERIGNORE,
     ENV_EXAMPLE,
-    PROJECT_CLAUDE_MD,
+    PROJECT_AGENTS_MD,
     create_project,
     create_skill,
     create_tool,
@@ -73,7 +73,7 @@ def init(app_name: str):
         click.echo(f"  {app_name}/agents.yml          — configure your agents")
         click.echo(f"  {app_name}/tools/              — add FastMCP tool servers here")
         click.echo(f"  {app_name}/skills/             — add skill .md files here")
-        click.echo(f"  {app_name}/CLAUDE.md           — Claude Code project guide")
+        click.echo(f"  {app_name}/AGENTS.md           — project guide")
         click.echo(f"  {app_name}/Dockerfile          — container image definition")
         click.echo(f"  {app_name}/docker-compose.yml  — containerized dev (daemon + api)")
         click.echo(f"  {app_name}/.env.example        — copy to .env and fill in API keys")
@@ -132,21 +132,21 @@ def create_skill_cmd(name: str):
 
 @cli.command("update-docs")
 def update_docs():
-    """Regenerate CLAUDE.md and add any missing Docker scaffold files."""
+    """Regenerate AGENTS.md and add any missing Docker scaffold files."""
     project_dir = find_project_dir()
     if project_dir is None:
         raise click.ClickException(
             "No agents.yml found. Run this from inside an ezagent project."
         )
 
-    # CLAUDE.md — always overwrite (generated template, not user-customised)
-    claude_md = project_dir / "CLAUDE.md"
-    existed = claude_md.exists()
-    claude_md.write_text(PROJECT_CLAUDE_MD)
+    # AGENTS.md — always overwrite (generated template, not user-customised)
+    agents_md = project_dir / "AGENTS.md"
+    existed = agents_md.exists()
+    agents_md.write_text(PROJECT_AGENTS_MD)
     if existed:
-        click.echo(f"Updated {claude_md} with the latest ezagent template.")
+        click.echo(f"Updated {agents_md} with the latest ezagent template.")
     else:
-        click.echo(f"Created {claude_md}")
+        click.echo(f"Created {agents_md}")
 
     # Docker scaffold files — create only if missing (user may have customised them)
     docker_files = [
