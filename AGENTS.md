@@ -27,6 +27,7 @@ All commands must use `uv run` from the repo root (e.g. `uv run ez --version`). 
 
 ### Testing
 
+- **GitHub Actions:** `.github/workflows/ci.yml` runs unit tests (`pytest tests/ -m "not integration"`) and integration tests on pull requests and pushes to `main` (Python 3.10 and 3.12). In the repo **Settings → Branches → Branch protection** for `main`, enable **Require status checks to pass before merging** and select the CI jobs so merges are blocked until tests pass.
 - pytest with `asyncio_mode = "auto"` (via pytest-asyncio). Run: `uv run pytest tests/ -v`
 - **Local tip:** if you exported `EZAGENT_TEST_*` for manual integration runs, unset them before unit tests or those vars leak into `DiscussionRuntime` / orchestration tests.
 - Tests go in `tests/` directory at the repo root.
