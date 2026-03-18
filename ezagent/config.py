@@ -33,7 +33,7 @@ class AgentConfig(BaseModel):
     provider: str = ""
     model: str = ""
     schedule: List[ScheduleEntry] = []
-     # Optional deterministic tool pipeline configuration for provider='none' agents.
+    # Optional deterministic tool pipeline configuration for provider='none' agents.
     pre_tools: List[Dict[str, Any]] = []
     run_tools: List[Dict[str, Any]] = []
 
