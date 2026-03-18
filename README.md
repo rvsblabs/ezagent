@@ -35,7 +35,7 @@ uv sync
 - **Unit tests**: `uv sync --group dev` → `uv run pytest tests/ -v`
 - **Integration tests** (real daemon, subprocess CLI, HTTP `TestClient`): `uv sync --group dev --extra serve` → `uv run pytest tests/integration -m integration -v`
 
-Integration tests exercise agent runs, orchestration, and discussions end-to-end. **AGENTS.md** documents **CI-only** env vars (`EZAGENT_TEST_PLANNER_RESPONSE`, `EZAGENT_TEST_ORCHESTRATION_FINAL`, `EZAGENT_TEST_DISCUSSION_DECISION`) used so those paths run without live LLM calls — **do not set them in production**.
+Integration tests exercise agent runs, orchestration, and discussions end-to-end. **AGENTS.md** documents **CI-only** env vars; the **CI job** must set them on the runner (see `.github/workflows/ci.yml` and `tests/ci_integration_env_contract.py`), not rely only on per-test daemon env — **do not set them in production**.
 
 ## Quick Start
 

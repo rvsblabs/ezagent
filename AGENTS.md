@@ -4,6 +4,18 @@
 
 ezagent is a Python CLI SDK for multi-agent AI systems. The single service is a Python package installed via `uv sync`. See `README.md` for command reference and source layout.
 
+### Documentation map
+
+| Doc | Purpose |
+|-----|---------|
+| **AGENTS.md** (this file) | Commands, deps, testing, integration tests, daemon/API caveats. |
+| **CLAUDE.md** | Long-form developer guide (internals, `agents.yml`, prebuilt tools, circular-loop pitfalls). |
+| **README.md** | User-facing CLI and layout. |
+| **`.worktree/updating-docs-for-worktree/creating-worktrees.md`** | Git worktrees: create/list/remove a checkout under `.worktree/<name>`, daemon/socket notes. |
+| **`tests/ci_integration_env_contract.py`** | Names of env vars the CI integration step must set (contract test + workflow must match). |
+
+When workflow or conventions change, update **AGENTS.md** and/or **CLAUDE.md** so agents stay aligned.
+
 ### Running commands
 
 All commands must use `uv run` from the repo root (e.g. `uv run ez --version`). The `ez` CLI entry point is defined in `pyproject.toml`.
@@ -16,9 +28,12 @@ All commands must use `uv run` from the repo root (e.g. `uv run ez --version`). 
 ### Testing
 
 - pytest with `asyncio_mode = "auto"` (via pytest-asyncio). Run: `uv run pytest tests/ -v`
+- **Local tip:** if you exported `EZAGENT_TEST_*` for manual integration runs, unset them before unit tests or those vars leak into `DiscussionRuntime` / orchestration tests.
 - Tests go in `tests/` directory at the repo root.
 - **Integration tests** (`subprocess`, real daemon, HTTP via `TestClient`): `uv sync --group dev --extra serve` then `uv run pytest tests/integration -m integration -v`. Marked with `@pytest.mark.integration` for CI (e.g. run on PR before merge). Covers `POST /v1/agents/{name}/run`, `POST /v1/orchestrations/{name}/run`, `POST /v1/discussions/{name}/run`, and `ez orchestrate` against a live daemon.
-- **CI-only env (do not set in production):** `EZAGENT_TEST_PLANNER_RESPONSE` (JSON task array string), `EZAGENT_TEST_ORCHESTRATION_FINAL` (final orchestration text after workers), `EZAGENT_TEST_DISCUSSION_DECISION` (immediate discussion decision). Integration tests set these on the daemon process so orchestration/discussion paths run without calling live LLMs.
+- **CI-only env (do not set in production):** `EZAGENT_TEST_PLANNER_RESPONSE` (JSON task array string), `EZAGENT_TEST_ORCHESTRATION_FINAL` (final orchestration text after workers), `EZAGENT_TEST_DISCUSSION_DECISION` (immediate discussion decision). Runtime reads these from the **daemon** environment; many fixtures set them when spawning `ez start`, but that is not a substitute for setting them on the **CI job**: any subprocess that does `os.environ.copy()` without adding these can otherwise call real LLMs.
+- **CI integration environment:** The step that runs `pytest tests/integration -m integration` must export **`ANTHROPIC_API_KEY`** (any non-empty placeholder is enough for startup checks) **and** the three `EZAGENT_TEST_*` vars above. Canonical YAML: `.github/workflows/ci.yml`. Required key set: `tests/ci_integration_env_contract.py` (unit test `test_github_ci_integration_step_sets_contract_env_vars` fails if the workflow drifts).
+- **GitHub Actions:** `.github/workflows/ci.yml` runs unit tests (including the workflow contract test) and integration tests on PRs and pushes to `main` (Python 3.10 and 3.12). Branch protection: require those checks before merge.
 
 ### Daemon startup caveat
 

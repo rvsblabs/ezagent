@@ -1,4 +1,9 @@
-"""Shared helpers for subprocess-based integration tests."""
+"""Shared helpers for subprocess-based integration tests.
+
+CI: the job that runs this package must set the env vars in
+``tests/ci_integration_env_contract`` (see AGENTS.md — CI integration environment).
+Fixtures that spawn daemons often set EZAGENT_TEST_* explicitly; job-level env is still required.
+"""
 
 from __future__ import annotations
 

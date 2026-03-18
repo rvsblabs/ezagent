@@ -35,4 +35,7 @@ test*
 
 portfolio_manager/
 
-.worktree/
+# Local git worktrees; shared agent docs under updating-docs-for-worktree are tracked
+.worktree/*
+!.worktree/updating-docs-for-worktree/
+!.worktree/updating-docs-for-worktree/**

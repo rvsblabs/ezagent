@@ -3,6 +3,17 @@
 ## What is ezagent?
 Low-code CLI SDK for creating multi-agent AI systems using LLMs (Anthropic Claude, Google Gemini) and FastMCP tools. Users define agents, tools, and skills in `agents.yml` — ezagent handles all runtime wiring.
 
+## Documentation (read before guessing)
+
+| Location | Use |
+|----------|-----|
+| **AGENTS.md** | Short agent/CI map: `uv run`, tests, integration tests, CI env contract (`tests/ci_integration_env_contract.py`). |
+| **CLAUDE.md** (this file) | Full developer guide: layout, abstractions, `agents.yml`, prebuilt tools, pitfalls. |
+| **README.md** | End-user CLI reference and product overview. |
+| **`.worktree/updating-docs-for-worktree/creating-worktrees.md`** | How to add/remove Git worktrees under `.worktree/` (parallel branches, separate checkouts). |
+
+If you change repo conventions or agent-facing workflow, update **AGENTS.md** and/or **CLAUDE.md** in the same change.
+
 ## Key Commands (always use `uv run` in this repo)
 ```bash
 uv sync                              # Install dependencies
