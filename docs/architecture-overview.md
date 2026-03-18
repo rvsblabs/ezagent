@@ -29,4 +29,3 @@ A fast, high‑level mental model for ezagent’s structure and a single CLI req
 - **`ezagent/tools/manager.py`**: FastMCP tool lifecycle and dispatch.
 - **`ezagent/llm/__init__.py`**: Provider factory (Anthropic/Google/DeepSeek/OpenAI).
 - **`ezagent/event_log.py`**: Structured logging to the SQLite event DB.
-

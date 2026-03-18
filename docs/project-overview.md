@@ -13,8 +13,7 @@ ezagent is a Python CLI SDK for multi-agent AI systems. You define agents, tools
 
 ### Read next
 
-- `AGENTS.md`
-- `architecture-overview.md`
-- `running-locally.md`
-- `docs/`
-
+- [AGENTS.md](../AGENTS.md) (repo root — developer map)
+- [architecture-overview.md](architecture-overview.md)
+- [running-locally.md](running-locally.md)
+- [writing-docs.md](writing-docs.md)
