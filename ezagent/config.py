@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
@@ -33,6 +33,9 @@ class AgentConfig(BaseModel):
     provider: str = ""
     model: str = ""
     schedule: List[ScheduleEntry] = []
+     # Optional deterministic tool pipeline configuration for provider='none' agents.
+    pre_tools: List[Dict[str, Any]] = []
+    run_tools: List[Dict[str, Any]] = []
 
     @field_validator("tools", "skills", mode="before")
     @classmethod
