@@ -27,3 +27,9 @@ All commands must use `uv run` from the repo root (e.g. `uv run ez --version`). 
 ### Scaffolding test projects
 
 Use `ez init <name>` from any directory to scaffold a test project. The scaffolded project includes `agents.yml`, `tools/`, `skills/`, and Docker files.
+
+### Tool-only agents and scheduled tool pipelines
+
+- Agents with `provider: none` run **deterministic tool pipelines** without any LLM calls.
+- Configure `pre_tools` and `run_tools` on an agent to run tools in order and share intermediate results.
+- Scheduled tool pipelines work by adding a `schedule` entry to a `provider: none` agent; the daemon executes the configured tools directly on each cron tick.
