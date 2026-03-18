@@ -17,6 +17,8 @@ All commands must use `uv run` from the repo root (e.g. `uv run ez --version`). 
 
 - pytest with `asyncio_mode = "auto"` (via pytest-asyncio). Run: `uv run pytest tests/ -v`
 - Tests go in `tests/` directory at the repo root.
+- **Integration tests** (`subprocess`, real daemon, HTTP via `TestClient`): `uv sync --group dev --extra serve` then `uv run pytest tests/integration -m integration -v`. Marked with `@pytest.mark.integration` for CI (e.g. run on PR before merge). Covers `POST /v1/agents/{name}/run`, `POST /v1/orchestrations/{name}/run`, `POST /v1/discussions/{name}/run`, and `ez orchestrate` against a live daemon.
+- **CI-only env (do not set in production):** `EZAGENT_TEST_PLANNER_RESPONSE` (JSON task array string), `EZAGENT_TEST_ORCHESTRATION_FINAL` (final orchestration text after workers), `EZAGENT_TEST_DISCUSSION_DECISION` (immediate discussion decision). Integration tests set these on the daemon process so orchestration/discussion paths run without calling live LLMs.
 
 ### Daemon startup caveat
 

@@ -30,6 +30,13 @@ cd ezagent
 uv sync
 ```
 
+### Testing
+
+- **Unit tests**: `uv sync --group dev` → `uv run pytest tests/ -v`
+- **Integration tests** (real daemon, subprocess CLI, HTTP `TestClient`): `uv sync --group dev --extra serve` → `uv run pytest tests/integration -m integration -v`
+
+Integration tests exercise agent runs, orchestration, and discussions end-to-end. **AGENTS.md** documents **CI-only** env vars (`EZAGENT_TEST_PLANNER_RESPONSE`, `EZAGENT_TEST_ORCHESTRATION_FINAL`, `EZAGENT_TEST_DISCUSSION_DECISION`) used so those paths run without live LLM calls — **do not set them in production**.
+
 ## Quick Start
 
 ### 1. Create a project

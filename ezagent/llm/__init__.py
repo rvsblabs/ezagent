@@ -26,7 +26,12 @@ def create_provider(name: str, model: str = "") -> LLMProvider:
         from .openai import OpenAIProvider
 
         return OpenAIProvider(model=model) if model else OpenAIProvider()
+    elif name in ("none", "noop"):
+        from .no_op import NoOpLLMProvider
+
+        return NoOpLLMProvider()
     else:
         raise ValueError(
-            f"Unknown LLM provider '{name}'. Supported: anthropic, google, deepseek, openai"
+            f"Unknown LLM provider '{name}'. Supported: anthropic, google, "
+            "deepseek, openai, none"
         )

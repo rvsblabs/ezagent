@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -120,11 +121,15 @@ class PlanAndDelegateRuntime:
             f"Available workers: {', '.join(self.config.workers)}\n\n"
             "Decompose into sub-tasks. Output a JSON array of {agent, message} objects."
         )
-        response = await self.planner_provider.chat(
-            messages=[{"role": "user", "content": planner_prompt}],
-            system=PLANNER_SYSTEM,
-        )
-        tasks = _parse_tasks_from_response(response.text, self.config.workers)
+        test_planner = os.environ.get("EZAGENT_TEST_PLANNER_RESPONSE")
+        if test_planner is not None:
+            tasks = _parse_tasks_from_response(test_planner, self.config.workers)
+        else:
+            response = await self.planner_provider.chat(
+                messages=[{"role": "user", "content": planner_prompt}],
+                system=PLANNER_SYSTEM,
+            )
+            tasks = _parse_tasks_from_response(response.text, self.config.workers)
 
         if not tasks:
             aggregator = self.agents.get(self.config.aggregator or self.config.planner)
@@ -165,6 +170,15 @@ class PlanAndDelegateRuntime:
             for t in tasks:
                 r = await run_task(t)
                 worker_results.append(r)
+
+        test_final = os.environ.get("EZAGENT_TEST_ORCHESTRATION_FINAL")
+        if test_final is not None:
+            return OrchestrationResult(
+                text=test_final,
+                tasks=tasks,
+                worker_results=list(worker_results),
+                status="success",
+            )
 
         # 3. Aggregator synthesizes
         aggregator_name = self.config.aggregator or self.config.planner

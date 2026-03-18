@@ -143,3 +143,26 @@ async def test_plan_and_delegate_invalid_json_fallback(orch_config, mock_agents)
     # Should not raise; returns something
     assert result is not None
     assert hasattr(result, "text")
+
+
+@pytest.mark.asyncio
+async def test_plan_and_delegate_env_test_planner_and_final(
+    monkeypatch, orch_config, mock_agents, mock_planner_provider
+):
+    """EZAGENT_TEST_PLANNER_RESPONSE / EZAGENT_TEST_ORCHESTRATION_FINAL skip live planner/aggregator."""
+    monkeypatch.setenv(
+        "EZAGENT_TEST_PLANNER_RESPONSE",
+        json.dumps([{"agent": "researcher", "message": "task"}]),
+    )
+    monkeypatch.setenv("EZAGENT_TEST_ORCHESTRATION_FINAL", "env_final_text")
+    runtime = PlanAndDelegateRuntime(
+        name="flow",
+        config=orch_config,
+        agents=mock_agents,
+        planner_provider=mock_planner_provider,
+        event_logger=None,
+    )
+    result = await runtime.run("user msg")
+    mock_planner_provider.chat.assert_not_called()
+    mock_agents["researcher"].run.assert_awaited()
+    assert result.text == "env_final_text"

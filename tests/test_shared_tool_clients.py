@@ -216,6 +216,8 @@ async def test_daemon_shared_clients_passed_to_agents(tmp_path):
     cfg.socket_path = str(tmp_path / "test.sock")
     cfg.pid_path = str(tmp_path / "test.pid")
     cfg.discussions = {}
+    cfg.orchestrations = {}
+    cfg.timezone = "UTC"
 
     agent_cfg = MagicMock(spec=AgentConfig)
     agent_cfg.tools = ["memory"]
@@ -224,6 +226,8 @@ async def test_daemon_shared_clients_passed_to_agents(tmp_path):
     agent_cfg.provider = None
     agent_cfg.model = None
     agent_cfg.description = "test agent"
+    agent_cfg.pre_tools = []
+    agent_cfg.run_tools = []
 
     cfg.agents = {"alpha": agent_cfg}
 

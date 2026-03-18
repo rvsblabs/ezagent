@@ -21,7 +21,10 @@ ezagent is a Python CLI run via `uv` from this repo.
 - **Status**: `uv run ez status`
 - **Logs**: `uv run ez logs`
 - **Stop daemon**: `uv run ez stop`
-- **Tests**: `uv run pytest tests/`
+- **Unit tests**: `uv sync --group dev` then `uv run pytest tests/`
+- **Integration tests** (daemon + HTTP API paths): `uv sync --group dev --extra serve` then `uv run pytest tests/integration -m integration -v`
+
+Integration tests may set **test-only** env vars on the daemon process (`EZAGENT_TEST_PLANNER_RESPONSE`, `EZAGENT_TEST_ORCHESTRATION_FINAL`, `EZAGENT_TEST_DISCUSSION_DECISION`) so orchestration/discussion complete without calling real LLMs. See **AGENTS.md** — never use these in production.
 
 ### If something breaks
 
