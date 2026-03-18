@@ -130,7 +130,12 @@ class Agent:
         source: str = "manual",
         parent_run_uuid: Optional[str] = None,
     ) -> AgentResult:
-        """Run the agentic loop: send message, handle tool calls, repeat."""
+        """Run the agent.
+
+        For standard agents, this executes the LLM-driven tool-use loop.
+        For tool-only agents (provider='none'), this runs a deterministic
+        pre_tools/run_tools pipeline without calling the LLM provider.
+        """
         debug_events: List[str] = []
 
         if depth >= MAX_RECURSION_DEPTH:
@@ -145,6 +150,23 @@ class Agent:
             run_uuid = await self._event_logger.start_agent_run(
                 self.name, message, source, depth, parent_run_uuid
             )
+
+        # Tool-only agents (provider='none') skip the LLM loop entirely and run
+        # a deterministic tool pipeline instead.
+        if getattr(self.config, "provider", None) == "none":
+            try:
+                result_text = await self._run_tool_only_pipeline(run_uuid)
+                if self._event_logger is not None and run_uuid is not None:
+                    self._event_logger.finish_agent_run(run_uuid, result_text, "success")
+                return AgentResult(text=result_text, debug_events=debug_events)
+            except Exception:
+                if self._event_logger is not None and run_uuid is not None:
+                    import traceback
+
+                    self._event_logger.finish_agent_run(
+                        run_uuid, "", "error", error=traceback.format_exc()
+                    )
+                raise
 
         if debug:
             available_skills = ", ".join(self.config.skills) if self.config.skills else "(none)"
@@ -385,6 +407,71 @@ class Agent:
             self._event_logger.finish_tool_call(call_uuid, result_text, "success")
 
         return result_text
+
+    async def _run_tool_only_pipeline(self, run_uuid: Optional[str]) -> str:
+        """Execute a deterministic pre_tools/run_tools pipeline for provider='none' agents."""
+        if self._tool_manager is None:
+            return json.dumps({"error": "Tool manager not initialized"})
+
+        # Use simple dict as shared context between steps, keyed by "as"/output id.
+        context: Dict[str, Any] = {}
+
+        async def _call_named_tool(tool_name: str, arguments: Dict[str, Any]) -> Any:
+            # Reuse the same logging path as normal tools.
+            result_text = await self._execute_tool(
+                tool_name,
+                arguments,
+                depth=0,
+                debug=False,
+                debug_events=None,
+                run_uuid=run_uuid,
+            )
+            # Try to parse JSON, fall back to raw string.
+            try:
+                return json.loads(result_text)
+            except Exception:
+                return result_text
+
+        # Run pre_tools, if present
+        pre_tools = getattr(self.config, "pre_tools", []) or []
+        for step in pre_tools:
+            tool_name = step.get("tool")
+            args = dict(step.get("args") or {})
+            value = await _call_named_tool(tool_name, args)
+            output_key = step.get("as") or step.get("id") or tool_name
+            context[output_key] = value
+
+        # Run main pipeline (run_tools)
+        run_tools = getattr(self.config, "run_tools", []) or []
+        last_result: Any = None
+        for step in run_tools:
+            tool_name = step.get("tool")
+            args: Dict[str, Any] = dict(step.get("args") or {})
+            args_from = step.get("args_from")
+            if args_from:
+                if args_from not in context:
+                    raise ValueError(
+                        f"Agent '{self.name}': run_tools step references unknown args_from key {args_from!r}"
+                    )
+                # Conventional wrapper: pass prior output under 'items' key if no explicit args.
+                if not args:
+                    args = {"items": context[args_from]}
+                else:
+                    args.setdefault("items", context[args_from])
+            value = await _call_named_tool(tool_name, args)
+            last_result = value
+            output_key = step.get("as") or step.get("id")
+            if output_key:
+                context[output_key] = value
+
+        # If there were no run_tools steps, return a simple summary of pre_tools.
+        if last_result is None:
+            return json.dumps({"status": "ok", "context": context})
+
+        # Prefer string result for compatibility with existing expectations.
+        if isinstance(last_result, str):
+            return last_result
+        return json.dumps(last_result)
 
     async def shutdown(self):
         """Disconnect all tool clients."""
