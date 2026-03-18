@@ -59,6 +59,17 @@ def test_create_provider_unknown_raises():
         create_provider("foo")
 
 
+@pytest.mark.asyncio
+async def test_create_provider_none_is_noop():
+    """create_provider('none') returns NoOpLLMProvider; chat raises."""
+    from ezagent.llm.no_op import NoOpLLMProvider
+
+    p = create_provider("none")
+    assert isinstance(p, NoOpLLMProvider)
+    with pytest.raises(RuntimeError, match="NoOpLLMProvider"):
+        await p.chat([])
+
+
 def test_deepseek_provider_requires_api_key():
     """DeepSeekProvider raises if DEEPSEEK_API_KEY is not set."""
     with patch.dict(os.environ, {}, clear=False):

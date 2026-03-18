@@ -30,6 +30,8 @@ testproject/
 test*
 !tests/
 !tests/test_*.py
+!tests/integration/
+!tests/integration/test_*.py
 
 portfolio_manager/
 

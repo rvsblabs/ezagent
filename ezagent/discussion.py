@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Optional
@@ -64,6 +65,27 @@ class DiscussionRuntime:
         discussion_uuid: Optional[str] = None
         if self._event_logger is not None:
             discussion_uuid = await self._event_logger.start_discussion(self.name, topic)
+
+        stub_decision = os.environ.get("EZAGENT_TEST_DISCUSSION_DECISION")
+        if stub_decision is not None:
+            stub_result = DiscussionResult(
+                topic=topic,
+                discussion_name=self.name,
+                terminal_state="integration_stub",
+                decision=stub_decision,
+                dissent=None,
+                transcript=[],
+                rounds_completed=0,
+            )
+            if self._event_logger is not None and discussion_uuid is not None:
+                self._event_logger.finish_discussion(
+                    discussion_uuid,
+                    terminal_state=stub_result.terminal_state,
+                    decision=stub_result.decision,
+                    dissent=stub_result.dissent,
+                    rounds=stub_result.rounds_completed,
+                )
+            return stub_result
 
         # Maps agent_name -> content of their last turn, for drift detection
         prev_positions: Dict[str, str] = {}

@@ -248,3 +248,20 @@ async def test_discussion_works_without_event_logger():
     result = await runtime.run("topic")
     assert result.topic == "topic"
     assert result.rounds_completed == 2
+
+
+@pytest.mark.asyncio
+async def test_discussion_stub_env_decision(monkeypatch):
+    """EZAGENT_TEST_DISCUSSION_DECISION returns immediately (integration/CI hook)."""
+    monkeypatch.setenv("EZAGENT_TEST_DISCUSSION_DECISION", "stub_decision_ok")
+    config = _two_round_config()
+    agents: Dict[str, Agent] = {
+        "alice": _make_mock_agent("alice", "never"),
+        "bob": _make_mock_agent("bob", "called"),
+    }
+    checker = FixedLLM("{}")
+    runtime = DiscussionRuntime("d", config, agents, checker, event_logger=None)
+    result = await runtime.run("topic")
+    assert result.decision == "stub_decision_ok"
+    assert result.terminal_state == "integration_stub"
+    assert result.rounds_completed == 0

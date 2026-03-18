@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 import yaml
-from fastapi import FastAPI, HTTPException, Request, WebSocket
+from fastapi import Body, FastAPI, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -161,11 +161,21 @@ def create_app(config: ProjectConfig) -> FastAPI:
         debug: bool = False
 
     @app.post("/v1/agents/{name}/run")
-    async def run_agent(name: str, body: RunRequest, request: Request) -> dict:
+    async def run_agent(name: str, request: Request) -> dict:
         cfg: ProjectConfig = request.app.state.config
         if name not in cfg.agents:
             raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
-        lines = await _send_socket(cfg, {"agent": name, "message": body.message, "debug": body.debug})
+        try:
+            raw = await request.json()
+        except Exception:
+            raise HTTPException(status_code=422, detail="JSON body required")
+        try:
+            run_req = RunRequest.model_validate(raw)
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        lines = await _send_socket(
+            cfg, {"agent": name, "message": run_req.message, "debug": run_req.debug}
+        )
         text = ""
         debug_events: list[str] = []
         for item in lines:
@@ -219,11 +229,21 @@ def create_app(config: ProjectConfig) -> FastAPI:
         topic: str
 
     @app.post("/v1/discussions/{name}/run")
-    async def run_discussion(name: str, body: DiscussionRequest, request: Request) -> dict:
+    async def run_discussion(name: str, request: Request) -> dict:
         cfg: ProjectConfig = request.app.state.config
         if name not in cfg.discussions:
             raise HTTPException(status_code=404, detail=f"Discussion '{name}' not found")
-        lines = await _send_socket(cfg, {"type": "discuss", "discussion": name, "topic": body.topic})
+        try:
+            raw = await request.json()
+        except Exception:
+            raise HTTPException(status_code=422, detail="JSON body required")
+        try:
+            disc_req = DiscussionRequest.model_validate(raw)
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        lines = await _send_socket(
+            cfg, {"type": "discuss", "discussion": name, "topic": disc_req.topic}
+        )
         for item in lines:
             if "error" in item:
                 raise HTTPException(status_code=500, detail=item["error"])
@@ -266,12 +286,25 @@ def create_app(config: ProjectConfig) -> FastAPI:
         message: str
 
     @app.post("/v1/orchestrations/{name}/run")
-    async def run_orchestration(name: str, body: OrchestrationRunRequest, request: Request) -> dict:
+    async def run_orchestration(name: str, request: Request) -> dict:
         cfg: ProjectConfig = request.app.state.config
         if name not in cfg.orchestrations:
             raise HTTPException(status_code=404, detail=f"Orchestration '{name}' not found")
+        try:
+            raw = await request.json()
+        except Exception:
+            raise HTTPException(status_code=422, detail="JSON body required")
+        try:
+            orch_req = OrchestrationRunRequest.model_validate(raw)
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=str(e))
         lines = await _send_socket(
-            cfg, {"type": "run_orchestration", "orchestration": name, "message": body.message}
+            cfg,
+            {
+                "type": "run_orchestration",
+                "orchestration": name,
+                "message": orch_req.message,
+            },
         )
         for item in lines:
             if "error" in item:
@@ -396,10 +429,13 @@ def create_app(config: ProjectConfig) -> FastAPI:
         content: str
 
     @app.put("/v1/config")
-    async def update_config(body: ConfigUpdateRequest, request: Request) -> dict:
+    async def update_config(
+        request: Request,
+        payload: ConfigUpdateRequest = Body(...),
+    ) -> dict:
         cfg: ProjectConfig = request.app.state.config
         try:
-            parsed = yaml.safe_load(body.content) or {}
+            parsed = yaml.safe_load(payload.content) or {}
             if "agents" not in parsed:
                 raise ValueError("agents.yml must contain an 'agents' key.")
             ProjectConfig(
@@ -412,7 +448,7 @@ def create_app(config: ProjectConfig) -> FastAPI:
             )
         except Exception as e:
             raise HTTPException(status_code=422, detail=str(e))
-        (cfg.project_dir / "agents.yml").write_text(body.content)
+        (cfg.project_dir / "agents.yml").write_text(payload.content)
         return {"ok": True}
 
     # ── Tools & Skills ─────────────────────────────────────────────────────────
@@ -447,11 +483,14 @@ def create_app(config: ProjectConfig) -> FastAPI:
         name: str
 
     @app.post("/v1/tools")
-    async def create_tool_endpoint(body: CreateToolRequest, request: Request) -> dict:
+    async def create_tool_endpoint(
+        request: Request,
+        payload: CreateToolRequest = Body(...),
+    ) -> dict:
         from ezagent.scaffold import create_tool
         cfg: ProjectConfig = request.app.state.config
         try:
-            path = create_tool(body.name, cfg.project_dir / "tools")
+            path = create_tool(payload.name, cfg.project_dir / "tools")
         except FileExistsError as e:
             raise HTTPException(status_code=409, detail=str(e))
         return {"path": str(path)}
@@ -460,11 +499,14 @@ def create_app(config: ProjectConfig) -> FastAPI:
         name: str
 
     @app.post("/v1/skills")
-    async def create_skill_endpoint(body: CreateSkillRequest, request: Request) -> dict:
+    async def create_skill_endpoint(
+        request: Request,
+        payload: CreateSkillRequest = Body(...),
+    ) -> dict:
         from ezagent.scaffold import create_skill
         cfg: ProjectConfig = request.app.state.config
         try:
-            path = create_skill(body.name, cfg.project_dir / "skills")
+            path = create_skill(payload.name, cfg.project_dir / "skills")
         except FileExistsError as e:
             raise HTTPException(status_code=409, detail=str(e))
         return {"path": str(path)}
