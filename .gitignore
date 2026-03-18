@@ -32,3 +32,5 @@ test*
 !tests/test_*.py
 
 portfolio_manager/
+
+.worktree/
