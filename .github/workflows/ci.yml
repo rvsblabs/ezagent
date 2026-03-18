@@ -1,5 +1,7 @@
 # Runs on every pull request and push to main. Enable "Require status checks"
 # in branch protection so merges are blocked until this passes.
+#
+# Integration job env keys must match tests/ci_integration_env_contract.py (enforced by test).
 name: CI
 
 on:
@@ -35,7 +37,11 @@ jobs:
       - name: Unit tests
         run: uv run --python ${{ matrix.python-version }} pytest tests/ -m "not integration" -v --tb=short
 
+      # EZAGENT_TEST_* = CI-only stubs; keys listed in tests/ci_integration_env_contract.py
       - name: Integration tests
         env:
           ANTHROPIC_API_KEY: sk-ant-api03-ci-placeholder-not-used-for-real-llm-calls
+          EZAGENT_TEST_PLANNER_RESPONSE: '[{"agent":"orch_worker","message":"ci stub task"}]'
+          EZAGENT_TEST_ORCHESTRATION_FINAL: ci_e2e_orchestration_final
+          EZAGENT_TEST_DISCUSSION_DECISION: ci_e2e_discussion_decision
         run: uv run --python ${{ matrix.python-version }} pytest tests/integration -m integration -v --tb=short
