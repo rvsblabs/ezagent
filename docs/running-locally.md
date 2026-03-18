@@ -29,5 +29,3 @@ ezagent is a Python CLI run via `uv` from this repo.
 - **Stale daemon/socket**: `uv run ez stop`, then remove `/tmp/ezagent_*.sock` and `/tmp/ezagent_*.pid` if they exist.
 - **Dependency issues**: Re-run `uv sync` (and `uv sync --group dev --extra serve` if using tests/HTTP).
 - **Test failures**: `uv run pytest tests/ -x -q` and fix the first failing test.
-
-
