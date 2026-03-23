@@ -322,3 +322,112 @@ def test_run_returns_error_on_timeout(mock_run, mock_which, tmp_path):
     d.mkdir()
     result = _call_tool("run", directory=str(d), message="go")
     assert "timed out" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — skipped if claude CLI not available
+# ---------------------------------------------------------------------------
+
+_CLAUDE_AVAILABLE = bool(
+    shutil.which("claude") or Path("~/.local/bin/claude").expanduser().is_file()
+)
+skip_no_claude = pytest.mark.skipif(
+    not _CLAUDE_AVAILABLE,
+    reason="claude CLI not installed — skipping integration tests",
+)
+
+
+@skip_no_claude
+def test_integration_run_creates_session(tmp_path):
+    """Full round-trip: run creates a session and persists it."""
+    from ezagent.tools.builtins.claude_code.sessions import get_session
+    d = tmp_path / "repo"
+    d.mkdir()
+    result = _call_tool(
+        "run",
+        directory=str(d),
+        message='Reply with the single word "DONE" and nothing else.',
+    )
+    assert "error" not in result, f"Unexpected error: {result}"
+    assert result["session_id"] is not None
+    assert get_session(str(d)) == result["session_id"]
+    assert result["session_reset"] is False
+
+
+@skip_no_claude
+def test_integration_run_resumes_session(tmp_path):
+    """Second run does not trigger session_reset."""
+    d = tmp_path / "repo"
+    d.mkdir()
+    first = _call_tool(
+        "run",
+        directory=str(d),
+        message='Reply with the single word "FIRST" and nothing else.',
+    )
+    assert "error" not in first, f"Unexpected error on first call: {first}"
+
+    second = _call_tool(
+        "run",
+        directory=str(d),
+        message='Reply with the single word "SECOND" and nothing else.',
+    )
+    assert "error" not in second, f"Unexpected error on second call: {second}"
+    # Session resume worked: no context reset
+    assert second["session_reset"] is False
+
+
+@skip_no_claude
+def test_integration_reset(tmp_path):
+    d = tmp_path / "repo"
+    d.mkdir()
+    _call_tool("run", directory=str(d), message='Reply "DONE".')
+    result = _call_tool("reset", directory=str(d))
+    assert result["status"] == "reset"
+
+    from ezagent.tools.builtins.claude_code.sessions import get_session
+    assert get_session(str(d)) is None
+
+
+@skip_no_claude
+def test_integration_reset_not_found(tmp_path):
+    d = tmp_path / "repo"
+    d.mkdir()
+    result = _call_tool("reset", directory=str(d))
+    assert result["status"] == "not_found"
+
+
+@skip_no_claude
+def test_integration_parallel_calls_different_directories(tmp_path):
+    """Parallel agents writing to different directories do not corrupt sessions.json."""
+    import concurrent.futures
+    import importlib
+    from ezagent.tools.builtins.claude_code.sessions import get_session
+
+    # Import the module once before spawning threads to avoid the
+    # module-eviction race inside _call_tool's sys.modules manipulation.
+    run_fn = importlib.import_module("ezagent.tools.builtins.claude_code.main").run
+
+    dirs = [tmp_path / f"repo-{i}" for i in range(4)]
+    for d in dirs:
+        d.mkdir()
+
+    def run_in_dir(d):
+        return json.loads(
+            run_fn(
+                directory=str(d),
+                message='Reply with the single word "DONE" and nothing else.',
+            )
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(run_in_dir, d): d for d in dirs}
+        results = {
+            futures[f]: f.result()
+            for f in concurrent.futures.as_completed(futures)
+        }
+
+    for d, result in results.items():
+        assert "error" not in result, f"Error for {d}: {result}"
+        session_id = result["session_id"]
+        assert session_id is not None
+        assert get_session(str(d)) == session_id
