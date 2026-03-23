@@ -380,7 +380,8 @@ def test_integration_run_resumes_session(tmp_path):
 def test_integration_reset(tmp_path):
     d = tmp_path / "repo"
     d.mkdir()
-    _call_tool("run", directory=str(d), message='Reply "DONE".')
+    run_result = _call_tool("run", directory=str(d), message='Reply "DONE".')
+    assert "error" not in run_result, f"Unexpected error on run: {run_result}"
     result = _call_tool("reset", directory=str(d))
     assert result["status"] == "reset"
 
