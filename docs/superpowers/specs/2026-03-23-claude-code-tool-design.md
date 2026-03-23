@@ -43,7 +43,7 @@ ezagent/tools/builtins/claude_code/
   requirements.txt # filelock dependency for concurrent write safety
 ```
 
-No `__init__.py` — consistent with all other prebuilt tool directories which are located by path, not Python import.
+An empty `__init__.py` is created — consistent with all other prebuilt tool directories (`http/`, `filesystem/`, `arxiv/`, etc.), which all contain one. It is required for the test environment to import `sessions` via the full `ezagent.tools.builtins.claude_code` package path.
 
 ### Registration
 
