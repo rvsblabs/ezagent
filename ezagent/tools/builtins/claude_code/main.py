@@ -136,15 +136,30 @@ def _run_session(
     except subprocess.TimeoutExpired:
         return json.dumps({"error": "claude_code__run timed out after 600s"})
 
-    # Stale session: non-zero exit when we tried to resume → clear and retry once
-    if proc.returncode != 0 and session_id:
-        sessions.clear_session(directory)
-        return _run_session(directory, message, mode, claude_bin, session_reset=True)
-
     if proc.returncode != 0:
+        # claude writes structured errors as JSON to stdout even on non-zero exit;
+        # try to extract a human-readable detail before falling back to stderr.
+        detail: str = ""
+        try:
+            data = json.loads(proc.stdout)
+            detail = data.get("result") or data.get("error") or ""
+        except (json.JSONDecodeError, ValueError):
+            pass
+        if not detail:
+            detail = proc.stderr[:2000] or proc.stdout[:2000]
+
+        # Stale session: resume failed but not due to a billing/auth error → retry once
+        stale_session_error = not any(
+            kw in detail.lower()
+            for kw in ("credit", "balance", "billing", "quota", "unauthorized", "forbidden")
+        )
+        if session_id and stale_session_error:
+            sessions.clear_session(directory)
+            return _run_session(directory, message, mode, claude_bin, session_reset=True)
+
         return json.dumps({
             "error": f"claude exited with code {proc.returncode}",
-            "stderr": proc.stderr[:2000],
+            "detail": detail,
         })
 
     # Parse JSON output from claude
