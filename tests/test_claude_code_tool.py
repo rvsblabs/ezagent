@@ -17,20 +17,18 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def isolated_state_file(tmp_path, monkeypatch):
-    """Redirect session state file to a temp directory for every test."""
-    fake_home = tmp_path / "home"
-    fake_home.mkdir()
-    monkeypatch.setenv("HOME", str(fake_home))
-    real_expanduser = Path.expanduser
+    """Redirect session state to a temp directory for every test."""
+    state_file = tmp_path / ".ezagent" / "claude_code_sessions.json"
 
-    def patched_expanduser(self):
-        s = str(self)
-        if s.startswith("~"):
-            return Path(str(fake_home) + s[1:])
-        return real_expanduser(self)
+    def fake_state_path():
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        return state_file
 
-    monkeypatch.setattr(Path, "expanduser", patched_expanduser)
-    yield fake_home
+    monkeypatch.setattr(
+        "ezagent.tools.builtins.claude_code.sessions._state_path",
+        fake_state_path,
+    )
+    yield state_file
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +81,7 @@ def test_state_file_created_in_ezagent_dir(tmp_path):
     assert p.exists()
     assert p.name == "claude_code_sessions.json"
     assert p.parent.name == ".ezagent"
+
 
 
 def test_save_session_degrades_gracefully_on_io_error(tmp_path):

@@ -18,10 +18,8 @@ logger = logging.getLogger(__name__)
 
 
 def _state_path() -> Path:
-    """Return path to the session state file, creating parent dir if needed."""
-    state_dir = Path("~/.ezagent").expanduser()
-    state_dir.mkdir(parents=True, exist_ok=True)
-    return state_dir / "claude_code_sessions.json"
+    """Return path to the session state file (no side effects)."""
+    return Path("~/.ezagent").expanduser() / "claude_code_sessions.json"
 
 
 def _lock_path() -> Path:
@@ -40,7 +38,9 @@ def _load() -> dict[str, str]:
 
 def _save(data: dict[str, str]) -> None:
     try:
-        _state_path().write_text(json.dumps(data, indent=2))
+        p = _state_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(data, indent=2))
     except OSError as e:
         logger.warning("claude_code: could not write session state: %s", e)
 
@@ -60,7 +60,11 @@ def save_session(directory: str, session_id: str) -> None:
 
 
 def clear_session(directory: str) -> bool:
-    """Remove session entry for *directory*. Returns True if entry existed."""
+    """Remove session entry for *directory*.
+
+    Returns True if the entry existed at read time; removal is best-effort
+    (write errors are logged but not raised).
+    """
     with FileLock(str(_lock_path())):
         data = _load()
         if directory not in data:
