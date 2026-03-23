@@ -12,4 +12,5 @@ PREBUILT_TOOLS = {
     "pdf_reader": _BUILTINS_DIR / "pdf_reader",
     "perplexity_research": _BUILTINS_DIR / "perplexity_research",
     "extract_structured": _BUILTINS_DIR / "extract_structured",
+    "claude_code": _BUILTINS_DIR / "claude_code",
 }
