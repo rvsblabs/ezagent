@@ -123,6 +123,7 @@ ezagent ships with prebuilt tools that don't require any local files. Add them t
 | `extract_structured`  | Extract structured data from text via Perplexity JSON Schema (requires `PERPLEXITY_API_KEY`) |
 | `http`                | Generic HTTP client for interacting with any REST API (no API key required by the tool) |
 | `filesystem`          | Read, write, list, and create directories on the local file system (no API key required) |
+| `claude_code`         | Spawn and drive multi-turn Claude Code sessions for long-running coding tasks — requires `claude` CLI installed (`claude --version` to verify) |
 
 ```yaml
 agents:
