@@ -201,3 +201,124 @@ def test_reset_clears_existing_session(tmp_path):
 def test_reset_rejects_relative_directory():
     result = _call_tool("reset", directory="relative/path")
     assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# main.py — run tool subprocess logic (mocked claude)
+# ---------------------------------------------------------------------------
+
+@patch("shutil.which", return_value="/usr/local/bin/claude")
+@patch("subprocess.run")
+def test_run_creates_new_session(mock_run, mock_which, tmp_path):
+    mock_run.return_value = _make_proc(stdout=CLAUDE_RESPONSE)
+    d = tmp_path / "repo"
+    d.mkdir()
+    result = _call_tool("run", directory=str(d), message="fix the bug")
+    assert result["session_id"] == "abc-123-def"
+    assert result["session_reset"] is False
+    assert "fixed the bug" in result["output"]
+    # Verify --resume was NOT passed (new session)
+    cmd = mock_run.call_args[0][0]
+    assert "--resume" not in cmd
+
+
+@patch("shutil.which", return_value="/usr/local/bin/claude")
+@patch("subprocess.run")
+def test_run_resumes_existing_session(mock_run, mock_which, tmp_path):
+    from ezagent.tools.builtins.claude_code.sessions import save_session
+    d = tmp_path / "repo"
+    d.mkdir()
+    save_session(str(d), "existing-session-id")
+    mock_run.return_value = _make_proc(stdout=CLAUDE_RESPONSE)
+    result = _call_tool("run", directory=str(d), message="continue")
+    cmd = mock_run.call_args[0][0]
+    assert "--resume" in cmd
+    assert "existing-session-id" in cmd
+
+
+@patch("shutil.which", return_value="/usr/local/bin/claude")
+@patch("subprocess.run")
+def test_run_retries_on_stale_session(mock_run, mock_which, tmp_path):
+    """First call fails (stale session), second succeeds as new session."""
+    from ezagent.tools.builtins.claude_code.sessions import get_session, save_session
+    d = tmp_path / "repo"
+    d.mkdir()
+    save_session(str(d), "stale-session-id")
+    mock_run.side_effect = [
+        _make_proc(returncode=1, stderr="session not found"),
+        _make_proc(stdout=CLAUDE_RESPONSE),
+    ]
+    result = _call_tool("run", directory=str(d), message="try again")
+    assert result["session_reset"] is True
+    assert result["session_id"] == "abc-123-def"
+    assert get_session(str(d)) == "abc-123-def"
+
+
+@patch("shutil.which", return_value="/usr/local/bin/claude")
+@patch("subprocess.run")
+def test_run_surfaces_error_when_retry_fails(mock_run, mock_which, tmp_path):
+    """Both calls fail: error returned, stale entry cleared."""
+    from ezagent.tools.builtins.claude_code.sessions import get_session, save_session
+    d = tmp_path / "repo"
+    d.mkdir()
+    save_session(str(d), "stale-session-id")
+    mock_run.side_effect = [
+        _make_proc(returncode=1, stderr="session not found"),
+        _make_proc(returncode=1, stderr="another error"),
+    ]
+    result = _call_tool("run", directory=str(d), message="try again")
+    assert "error" in result
+    # Stale entry must be cleared even after retry failure
+    assert get_session(str(d)) is None
+
+
+@patch("shutil.which", return_value="/usr/local/bin/claude")
+@patch("subprocess.run")
+def test_run_truncates_long_output(mock_run, mock_which, tmp_path):
+    long_output = "x" * 60_000
+    response = json.dumps({"result": long_output, "session_id": "s1"})
+    mock_run.return_value = _make_proc(stdout=response)
+    d = tmp_path / "repo"
+    d.mkdir()
+    result = _call_tool("run", directory=str(d), message="go")
+    assert len(result["output"]) <= 50_000 + len("\n\n[Output truncated]")
+    assert result["output"].endswith("[Output truncated]")
+
+
+@patch("shutil.which", return_value="/usr/local/bin/claude")
+@patch("subprocess.run")
+def test_run_handles_non_json_output(mock_run, mock_which, tmp_path):
+    mock_run.return_value = _make_proc(stdout="some plain text output")
+    d = tmp_path / "repo"
+    d.mkdir()
+    result = _call_tool("run", directory=str(d), message="go")
+    assert result["output"] == "some plain text output"
+    assert result["session_id"] is None
+    assert "parse_warning" in result
+
+
+@patch("shutil.which", return_value=None)
+def test_run_errors_when_claude_not_found(mock_which, tmp_path):
+    d = tmp_path / "repo"
+    d.mkdir()
+    # Patch is_file only for the claude fallback path, not for Path.exists
+    original_is_file = Path.is_file
+
+    def patched_is_file(self):
+        if "local/bin/claude" in str(self):
+            return False
+        return original_is_file(self)
+
+    with patch.object(Path, "is_file", patched_is_file):
+        result = _call_tool("run", directory=str(d), message="go")
+    assert "error" in result
+    assert "claude CLI not found" in result["error"]
+
+
+@patch("shutil.which", return_value="/usr/local/bin/claude")
+@patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=600))
+def test_run_returns_error_on_timeout(mock_run, mock_which, tmp_path):
+    d = tmp_path / "repo"
+    d.mkdir()
+    result = _call_tool("run", directory=str(d), message="go")
+    assert "timed out" in result["error"]
