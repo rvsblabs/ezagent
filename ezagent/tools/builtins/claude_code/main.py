@@ -24,12 +24,10 @@ from typing import Optional
 # Local import: sessions.py lives alongside this file in the same directory.
 # The ezagent package is not available in the isolated subprocess environment.
 #
-# Using sys.path.insert + bare `import sessions` is intentional: sessions.py
-# self-registers under the "sessions" key in sys.modules (in addition to the
-# full package path key).  This means that in tests — where _call_tool evicts
-# all "claude_code" modules from sys.modules before reimporting main — the bare
-# "sessions" key survives the eviction and Python returns the already-cached
-# (and possibly monkeypatched) module object instead of re-executing the file.
+# sys.path.insert + bare `import sessions` ensures this works both in the
+# production subprocess (where only the tool directory is on the path) and in
+# tests (where _call_tool re-registers the patched sessions module under the
+# bare "sessions" key before reimporting main, so monkeypatches are preserved).
 sys.path.insert(0, str(Path(__file__).parent))
 import sessions  # noqa: E402
 
@@ -115,6 +113,13 @@ def _run_session(
 ) -> str:
     """Execute the claude subprocess, handling stale session retry."""
     session_id = sessions.get_session(directory)
+
+    # On the retry path (session_reset=True) there should be no session — the
+    # caller cleared it before recursing.  If one somehow reappears (e.g. a race),
+    # clear it defensively so we never recurse a third time.
+    if session_reset and session_id:
+        sessions.clear_session(directory)
+        session_id = None
 
     cmd = [claude_bin, "-p", message, "--output-format", "json", "--permission-mode", mode]
     if session_id:

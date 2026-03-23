@@ -125,10 +125,22 @@ def _call_tool(tool_name: str, **kwargs):
     """Import and call a tool function from main.py directly."""
     import importlib
     import sys
-    # Fresh import each time so monkeypatched _state_path affects sessions module
+
+    # Preserve the sessions module object (which has monkeypatches applied by
+    # the isolated_state_file fixture) across the main.py module eviction.
+    sessions_key = "ezagent.tools.builtins.claude_code.sessions"
+    sessions_mod = sys.modules.get(sessions_key)
+
+    # Evict main.py only (not sessions) so monkeypatches survive reimport.
     for mod_name in list(sys.modules.keys()):
-        if "claude_code" in mod_name:
+        if "claude_code.main" in mod_name:
             del sys.modules[mod_name]
+
+    # Re-register sessions under the bare "sessions" key so main.py's
+    # `sys.path.insert + import sessions` finds the patched module object.
+    if sessions_mod is not None:
+        sys.modules["sessions"] = sessions_mod
+
     mod = importlib.import_module("ezagent.tools.builtins.claude_code.main")
     fn = getattr(mod, tool_name)
     return json.loads(fn(**kwargs))
