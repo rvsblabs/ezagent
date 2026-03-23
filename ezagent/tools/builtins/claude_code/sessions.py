@@ -72,3 +72,31 @@ def clear_session(directory: str) -> bool:
         del data[directory]
         _save(data)
         return True
+
+
+# ---------------------------------------------------------------------------
+# Self-register under the bare "sessions" key in sys.modules.
+#
+# When this module is first imported via the full package path
+# (ezagent.tools.builtins.claude_code.sessions), it also registers itself
+# under the bare "sessions" key.  This ensures that when main.py is reimported
+# in an isolated test environment (after the "claude_code" entries are evicted
+# from sys.modules by _call_tool), its `import sessions` statement hits the
+# SAME cached module object — including any monkeypatches applied by test
+# fixtures — rather than re-executing the module from disk.
+# ---------------------------------------------------------------------------
+import sys as _sys
+
+# Always keep the bare "sessions" key in sys.modules pointing to THIS module
+# object.  When main.py runs `import sessions` (via sys.path insert), Python
+# returns the cached entry from sys.modules — meaning it gets EXACTLY this
+# module, including any monkeypatches applied by test fixtures.
+#
+# Why always overwrite (not just set-if-missing): _call_tool in tests evicts all
+# "claude_code" entries from sys.modules and then reimports main.py, which
+# triggers a fresh re-execution of sessions.py.  On that reimport the new module
+# object is different from the old one that fixtures patched.  By always writing
+# the current module into sys.modules["sessions"], we ensure that subsequent
+# `import sessions` calls (from a freshly-imported main.py) get the same fresh
+# object that the fixture is about to patch — not a stale prior one.
+_sys.modules["sessions"] = _sys.modules[__name__]

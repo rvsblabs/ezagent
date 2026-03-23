@@ -115,3 +115,77 @@ def test_concurrent_writes_do_not_corrupt(tmp_path):
     for i in range(20):
         directory = str(tmp_path / f"repo-{i}")
         assert get_session(directory) == f"uuid-{i}"
+
+
+# ---------------------------------------------------------------------------
+# main.py — helpers and validation/reset tests
+# ---------------------------------------------------------------------------
+
+def _call_tool(tool_name: str, **kwargs):
+    """Import and call a tool function from main.py directly."""
+    import importlib
+    import sys
+    # Fresh import each time so monkeypatched _state_path affects sessions module
+    for mod_name in list(sys.modules.keys()):
+        if "claude_code" in mod_name:
+            del sys.modules[mod_name]
+    mod = importlib.import_module("ezagent.tools.builtins.claude_code.main")
+    fn = getattr(mod, tool_name)
+    return json.loads(fn(**kwargs))
+
+
+def _make_proc(returncode=0, stdout="", stderr=""):
+    proc = MagicMock()
+    proc.returncode = returncode
+    proc.stdout = stdout
+    proc.stderr = stderr
+    return proc
+
+
+CLAUDE_RESPONSE = json.dumps({
+    "result": "I fixed the bug in auth.py.",
+    "session_id": "abc-123-def",
+})
+
+
+def test_run_rejects_relative_directory():
+    result = _call_tool("run", directory="relative/path", message="hello")
+    assert "error" in result
+    assert "absolute" in result["error"].lower()
+
+
+def test_run_rejects_nonexistent_directory(tmp_path):
+    result = _call_tool("run", directory=str(tmp_path / "does_not_exist"), message="hello")
+    assert "error" in result
+    assert "does not exist" in result["error"].lower()
+
+
+def test_run_rejects_invalid_permission_mode(tmp_path):
+    d = tmp_path / "repo"
+    d.mkdir()
+    result = _call_tool("run", directory=str(d), message="hello", permission_mode="invalid")
+    assert "error" in result
+    assert "permission_mode" in result["error"].lower()
+
+
+def test_reset_returns_not_found_when_no_session(tmp_path):
+    d = tmp_path / "repo"
+    d.mkdir()
+    result = _call_tool("reset", directory=str(d))
+    assert result["status"] == "not_found"
+    assert result["directory"] == str(d)
+
+
+def test_reset_clears_existing_session(tmp_path):
+    from ezagent.tools.builtins.claude_code.sessions import save_session
+    d = tmp_path / "repo"
+    d.mkdir()
+    save_session(str(d), "some-uuid")
+    result = _call_tool("reset", directory=str(d))
+    assert result["status"] == "reset"
+    assert result["directory"] == str(d)
+
+
+def test_reset_rejects_relative_directory():
+    result = _call_tool("reset", directory="relative/path")
+    assert "error" in result
