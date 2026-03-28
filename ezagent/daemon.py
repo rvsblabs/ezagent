@@ -525,7 +525,7 @@ class AgentDaemon:
             await self._shared_tm.disconnect()
 
         # Cleanup files
-        for path in [self.config.socket_path, self.config.pid_path]:
+        for path in [self.config.socket_path, self.config.pid_path, self.config.pgid_path]:
             if os.path.exists(path):
                 os.unlink(path)
 
@@ -543,6 +543,7 @@ def start_daemon(foreground: bool = True):
         raise click.ClickException(str(e))
 
     if not foreground:
+        _kill_orphans(config)
         _start_background(config)
         return
 
@@ -583,6 +584,29 @@ def start_daemon(foreground: bool = True):
         loop.close()
 
 
+def _kill_orphans(config: ProjectConfig):
+    """Kill any tool subprocesses left over from a previous crashed daemon.
+
+    If a ``.pgid`` file exists from an earlier background run that did not
+    shut down cleanly, send SIGTERM to the entire recorded process group so
+    orphaned tool subprocesses are cleaned up before a new daemon starts.
+    """
+    pgid_path = config.pgid_path
+    if not os.path.exists(pgid_path):
+        return
+    try:
+        with open(pgid_path) as f:
+            pgid = int(f.read().strip())
+        os.killpg(pgid, signal.SIGTERM)
+        logging.info("Cleaned up orphaned process group %d before start", pgid)
+    except (ValueError, ProcessLookupError, PermissionError, OSError):
+        pass
+    try:
+        os.unlink(pgid_path)
+    except OSError:
+        pass
+
+
 def _start_background(config: ProjectConfig):
     """Double-fork into the background (original daemon behaviour)."""
     pid = os.fork()
@@ -602,6 +626,17 @@ def _start_background(config: ProjectConfig):
     os.dup2(devnull, 1)
     os.dup2(devnull, 2)
     os.close(devnull)
+
+    # Record the process group ID so ez stop can kill the whole group
+    # (daemon + all spawned tool subprocesses) even after a crash.
+    # os.setsid() above made child-1 the process group leader; child-2
+    # (this process) inherits that PGID.
+    pgid_path = config.pgid_path
+    try:
+        with open(pgid_path, "w") as _f:
+            _f.write(str(os.getpgrp()))
+    except OSError:
+        pass
 
     log_dir = config.project_dir / ".ezagent"
     log_dir.mkdir(exist_ok=True)
@@ -641,20 +676,43 @@ def stop_daemon():
         raise click.ClickException(str(e))
 
     pid_path = config.pid_path
-    if not os.path.exists(pid_path):
+    pgid_path = config.pgid_path
+
+    if not os.path.exists(pid_path) and not os.path.exists(pgid_path):
         raise click.ClickException("No running daemon found (PID file missing).")
 
-    with open(pid_path) as f:
-        pid = int(f.read().strip())
-
-    try:
-        os.kill(pid, signal.SIGTERM)
-        click.echo(f"Sent SIGTERM to daemon (PID {pid})")
-    except ProcessLookupError:
-        click.echo("Daemon process not found. Cleaning up stale files.")
+    # Prefer killing the entire process group (background mode) so that all
+    # spawned tool subprocesses are terminated together with the daemon.
+    # Fall back to a single-PID kill for foreground-mode daemons.
+    if os.path.exists(pgid_path):
+        with open(pgid_path) as f:
+            try:
+                pgid = int(f.read().strip())
+            except ValueError:
+                pgid = None
+        if pgid is not None:
+            try:
+                os.killpg(pgid, signal.SIGTERM)
+                click.echo(f"Sent SIGTERM to process group {pgid} (daemon + tool subprocesses)")
+            except ProcessLookupError:
+                click.echo("Process group not found. Cleaning up stale files.")
+            except PermissionError as e:
+                click.echo(f"Could not signal process group: {e}")
+    elif os.path.exists(pid_path):
+        with open(pid_path) as f:
+            try:
+                pid = int(f.read().strip())
+            except ValueError:
+                pid = None
+        if pid is not None:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                click.echo(f"Sent SIGTERM to daemon (PID {pid})")
+            except ProcessLookupError:
+                click.echo("Daemon process not found. Cleaning up stale files.")
 
     # Cleanup
-    for path in [config.socket_path, pid_path]:
+    for path in [config.socket_path, pid_path, pgid_path]:
         if os.path.exists(path):
             os.unlink(path)
 
