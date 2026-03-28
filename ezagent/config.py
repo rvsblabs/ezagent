@@ -235,6 +235,18 @@ class ProjectConfig(BaseModel):
         return f"/tmp/ezagent_{h}.pid"
 
     @property
+    def pgid_path(self) -> str:
+        """Path to the process-group ID file written by background-mode daemons.
+
+        Only created when ``ez start -d`` is used (double-fork / background
+        mode).  ``ez stop`` reads this file so it can send SIGTERM to the
+        entire process group (daemon + all spawned tool subprocesses) rather
+        than only to the daemon PID.
+        """
+        h = hashlib.md5(str(self.project_dir.resolve()).encode()).hexdigest()[:12]
+        return f"/tmp/ezagent_{h}.pgid"
+
+    @property
     def events_db_path(self) -> Path:
         return self.project_dir / ".ezagent" / "events.db"
 
